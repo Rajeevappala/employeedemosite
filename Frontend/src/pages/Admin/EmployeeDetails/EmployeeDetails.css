@@ -1,0 +1,886 @@
+/* ==========================================================================
+   Admin Employee Details Page Styles
+   Organization: GaintPro Software Technologies
+   ========================================================================== */
+
+.admin-employee-details-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* ==========================================================================
+   Page Header
+   ========================================================================== */
+.admin-details-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.admin-details-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.admin-back-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: none;
+  border: none;
+  color: #2563eb;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: color 0.15s ease;
+  width: fit-content;
+}
+
+.admin-back-link-btn:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.admin-back-arrow {
+  display: none;
+}
+
+.admin-details-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-details-page-title {
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.admin-details-page-subtitle {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.admin-details-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.admin-edit-header-btn {
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.2);
+}
+
+.admin-btn-icon-svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ==========================================================================
+   Toast Notification
+   ========================================================================== */
+.admin-details-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 0.5rem;
+  color: #166534;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+  animation: detailsFadeIn 0.2s ease;
+}
+
+.admin-details-toast svg {
+  width: 18px;
+  height: 18px;
+  color: #16a34a;
+  flex-shrink: 0;
+}
+
+@keyframes detailsFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================================================
+   Employee Header Summary Card
+   ========================================================================== */
+.admin-summary-header-card {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+}
+
+.admin-summary-avatar-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  min-width: 72px;
+  min-height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  color: #1d4ed8;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  border: 2px solid #ffffff;
+  box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.15);
+  flex-shrink: 0;
+}
+
+.admin-summary-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-summary-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.admin-summary-name-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.admin-summary-name {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.admin-summary-roles {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+  color: #64748b;
+  flex-wrap: wrap;
+}
+
+.admin-summary-designation {
+  font-weight: 600;
+  color: #334155;
+}
+
+.admin-summary-bullet {
+  color: #cbd5e1;
+}
+
+.admin-summary-department {
+  color: #64748b;
+}
+
+.admin-summary-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-top: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.admin-summary-contact-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: #475569;
+}
+
+.admin-summary-contact-item svg {
+  width: 16px;
+  height: 16px;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Two-Column Information Grid Sections
+   ========================================================================== */
+.admin-details-sections-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.admin-info-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-info-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.25rem;
+  box-sizing: border-box;
+}
+
+.admin-info-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.admin-field-full {
+  grid-column: 1 / -1;
+}
+
+.admin-info-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.admin-info-value {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.font-mono {
+  font-family: monospace;
+}
+
+/* ==========================================================================
+   SECTION 3 — Documents Summary
+   ========================================================================== */
+.admin-documents-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-doc-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.admin-doc-item:hover {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.admin-doc-left {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  min-width: 0;
+}
+
+.admin-doc-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 0.5rem;
+  background-color: #eff6ff;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.admin-doc-icon-wrapper svg {
+  width: 20px;
+  height: 20px;
+}
+
+.admin-doc-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.admin-doc-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.admin-doc-subtext {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.admin-doc-right {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  flex-shrink: 0;
+}
+
+.admin-doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.admin-doc-btn {
+  padding: 0.3125rem 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: 0.375rem;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.admin-doc-btn:hover:not(:disabled) {
+  background-color: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.admin-doc-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   SECTION 4 — Provident Fund Details
+   ========================================================================== */
+.admin-pf-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.admin-pf-stat-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.875rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+}
+
+.admin-pf-stat-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.admin-pf-stat-val {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.text-primary {
+  color: #2563eb !important;
+}
+
+/* ==========================================================================
+   SECTION 5 — Leave Summary
+   ========================================================================== */
+.admin-leave-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-leave-subcard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.875rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  background-color: #ffffff;
+  transition: border-color 0.15s ease;
+}
+
+.subcard-blue {
+  border-left: 4px solid #2563eb;
+}
+
+.subcard-green {
+  border-left: 4px solid #16a34a;
+}
+
+.subcard-amber {
+  border-left: 4px solid #f59e0b;
+}
+
+.admin-leave-subcard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-leave-type-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.admin-leave-remaining-pill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  background-color: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.admin-leave-upl-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  background-color: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.admin-leave-subcard-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.single-metric {
+  grid-template-columns: 1fr;
+}
+
+.admin-leave-metric {
+  display: flex;
+  flex-direction: column;
+  background-color: #f8fafc;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.375rem;
+}
+
+.metric-val {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.metric-lbl {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.text-amber {
+  color: #d97706 !important;
+}
+
+/* ==========================================================================
+   SECTION 6 — Recent Leave Requests Table
+   ========================================================================== */
+.admin-recent-leaves-table-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-leave-type-name-strong {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+/* ==========================================================================
+   SECTION 7 — Admin Employee Actions
+   ========================================================================== */
+.admin-actions-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-action-buttons-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.admin-action-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5625rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  border: 1px solid transparent;
+}
+
+.admin-action-trigger-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.btn-action-primary {
+  background-color: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+.btn-action-primary:hover {
+  background-color: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.btn-action-neutral {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.btn-action-neutral:hover {
+  background-color: #f8fafc;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.btn-action-danger {
+  background-color: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.btn-action-danger:hover {
+  background-color: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+/* Generic small button */
+.admin-btn-sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+/* ==========================================================================
+   Confirmation & Document Preview Modals
+   ========================================================================== */
+.admin-confirm-modal {
+  max-width: 440px;
+}
+
+.admin-confirm-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.5rem 1.5rem 0.5rem;
+  gap: 0.625rem;
+}
+
+.admin-confirm-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background-color: #fef2f2;
+  color: #dc2626;
+  margin-bottom: 0.25rem;
+}
+
+.admin-confirm-icon-wrap svg {
+  width: 28px;
+  height: 28px;
+}
+
+.admin-confirm-message {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+}
+
+.admin-confirm-subtext {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin: 0;
+}
+
+.admin-btn-danger {
+  background-color: #dc2626;
+  color: #ffffff;
+  border: 1px solid #dc2626;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  font-family: inherit;
+}
+
+.admin-btn-danger:hover {
+  background-color: #b91c1c;
+}
+
+/* Document Preview Modal */
+.admin-doc-preview-modal {
+  max-width: 680px;
+}
+
+.admin-preview-content {
+  padding: 1.5rem;
+  background-color: #f8fafc;
+  overflow-y: auto;
+  max-height: 50vh;
+}
+
+.admin-preview-simulated-sheet {
+  position: relative;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  border-radius: 0.5rem;
+  padding: 2.25rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow: hidden;
+}
+
+.admin-preview-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 2px solid #2563eb;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.sheet-org {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 0.9375rem;
+}
+
+.sheet-doc-type {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #2563eb;
+  letter-spacing: 0.05em;
+}
+
+.sheet-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.sheet-text {
+  font-size: 0.875rem;
+  color: #334155;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.sheet-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-30deg);
+  font-size: 3rem;
+  font-weight: 800;
+  color: rgba(148, 163, 184, 0.12);
+  pointer-events: none;
+  white-space: nowrap;
+  letter-spacing: 0.1em;
+}
+
+/* ==========================================================================
+   Responsive Breakpoints
+   320px, 375px, 414px, 768px, 1024px, 1440px, 1920px
+   ========================================================================== */
+
+/* Tablet & Mobile (< 1024px) */
+@media (max-width: 1023px) {
+  .admin-details-sections-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mobile Devices (< 768px) */
+@media (max-width: 767px) {
+  .admin-employee-details-page {
+    gap: 1.25rem;
+  }
+
+  .admin-details-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-edit-header-btn {
+    width: 100%;
+  }
+
+  .admin-summary-header-card {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 1.25rem;
+  }
+
+  .admin-summary-content {
+    align-items: center;
+    width: 100%;
+  }
+
+  .admin-summary-title-row {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .admin-summary-roles {
+    justify-content: center;
+  }
+
+  .admin-summary-contact-row {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .admin-info-fields-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-pf-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-action-buttons-wrap {
+    flex-direction: column;
+  }
+
+  .admin-action-trigger-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .admin-doc-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .admin-doc-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* Small Mobile (<= 414px) */
+@media (max-width: 414px) {
+  .admin-details-page-title {
+    font-size: 1.375rem;
+  }
+
+  .admin-summary-name {
+    font-size: 1.25rem;
+  }
+
+  .admin-summary-avatar-circle {
+    width: 60px;
+    height: 60px;
+    min-width: 60px;
+    min-height: 60px;
+    font-size: 1.25rem;
+  }
+
+  .admin-doc-right {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .admin-doc-actions {
+    width: 100%;
+  }
+
+  .admin-doc-btn {
+    flex: 1;
+    text-align: center;
+  }
+}

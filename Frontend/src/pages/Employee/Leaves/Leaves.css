@@ -1,0 +1,845 @@
+/* ==========================================================================
+   Employee Leaves Page Styles
+   ========================================================================== */
+
+.employee-leaves-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* Screen reader only utility */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ==========================================================================
+   Page Header
+   ========================================================================== */
+.leaves-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.leaves-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.leaves-page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.leaves-page-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Optional Action: Apply for Leave Button */
+.leaves-apply-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  min-height: 42px;
+  background-color: #2563eb;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.15s ease, transform 0.05s ease;
+  box-sizing: border-box;
+}
+
+.leaves-apply-button:hover {
+  background-color: #1d4ed8;
+}
+
+.leaves-apply-button:active {
+  background-color: #1e40af;
+  transform: scale(0.99);
+}
+
+.leaves-apply-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.leaves-btn-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* ==========================================================================
+   Temporary Feedback Notice Banner
+   ========================================================================== */
+.leaves-notice-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.5rem;
+  color: #1e40af;
+  font-size: 0.875rem;
+  box-sizing: border-box;
+}
+
+.leaves-notice-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.leaves-notice-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: #2563eb;
+}
+
+.leaves-notice-dismiss {
+  background: none;
+  border: none;
+  color: #1e40af;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+}
+
+.leaves-notice-dismiss:hover {
+  background-color: rgba(30, 64, 175, 0.1);
+}
+
+.leaves-notice-dismiss:focus-visible {
+  outline: 2px solid #2563eb;
+}
+
+/* ==========================================================================
+   Section 1: Leave Balance Cards
+   ========================================================================== */
+.leave-balance-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.section-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.leaves-section-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.leaves-section-meta {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.leaves-section-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  background-color: #f3f4f6;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.leave-balance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+
+.leave-balance-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1.25rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.leave-balance-card:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.balance-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.balance-code-badge {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.875rem;
+  letter-spacing: 0.02em;
+}
+
+.leave-balance-pl .balance-code-badge {
+  background-color: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+
+.leave-balance-upl .balance-code-badge {
+  background-color: #f5f3ff;
+  color: #7c3aed;
+  border: 1px solid #ddd6fe;
+}
+
+.leave-balance-sick .balance-code-badge {
+  background-color: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.balance-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.balance-type-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.balance-allocated-text {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.balance-main-metric {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 1.25rem 0 0.75rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid #f3f4f6;
+}
+
+.remaining-stat-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.remaining-number {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1;
+}
+
+.remaining-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #2563eb;
+  margin-top: 0.25rem;
+}
+
+.used-stat-group {
+  display: flex;
+  flex-direction: column;
+  text-align: right;
+}
+
+.used-number {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #4b5563;
+  line-height: 1;
+}
+
+.used-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 0.25rem;
+}
+
+.balance-progress-track {
+  width: 100%;
+  height: 6px;
+  background-color: #f3f4f6;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.balance-progress-fill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+.leave-balance-pl .balance-progress-fill {
+  background-color: #2563eb;
+}
+
+.leave-balance-upl .balance-progress-fill {
+  background-color: #7c3aed;
+}
+
+.leave-balance-sick .balance-progress-fill {
+  background-color: #d97706;
+}
+
+/* ==========================================================================
+   Section 2: Leave History & Filter Toolbar
+   ========================================================================== */
+.leave-history-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.leaves-controls-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1.125rem 1.25rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+}
+
+.leaves-search-box {
+  flex: 1;
+  min-width: 240px;
+}
+
+.leaves-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.search-input-svg {
+  position: absolute;
+  left: 0.875rem;
+  width: 18px;
+  height: 18px;
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.leaves-search-input {
+  width: 100%;
+  height: 40px;
+  padding: 0.5rem 2.25rem 0.5rem 2.5rem;
+  font-size: 0.875rem;
+  color: #111827;
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.leaves-search-input::placeholder {
+  color: #9ca3af;
+}
+
+.leaves-search-input:hover {
+  border-color: #9ca3af;
+}
+
+.leaves-search-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.leaves-clear-btn {
+  position: absolute;
+  right: 0.625rem;
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.leaves-clear-btn:hover {
+  color: #4b5563;
+}
+
+.leaves-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.filter-select-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.filter-select-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.leaves-select {
+  height: 40px;
+  padding: 0.375rem 2rem 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  color: #111827;
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.leaves-select:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+.leaves-reset-filters-btn {
+  height: 40px;
+  padding: 0.375rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background-color: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  color: #4b5563;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.leaves-reset-filters-btn:hover {
+  background-color: #e5e7eb;
+  color: #111827;
+}
+
+/* ==========================================================================
+   Leave History Table (Desktop / Tablet)
+   ========================================================================== */
+.leave-table-card {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.leave-table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.leave-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.leave-table thead {
+  background-color: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.leave-table th {
+  padding: 0.875rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.leave-table td {
+  padding: 1rem;
+  border-bottom: 1px solid #f3f4f6;
+  color: #111827;
+  vertical-align: middle;
+}
+
+.leave-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.leave-table tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+.cell-leave-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.type-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  background-color: #f3f4f6;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.cell-days {
+  font-weight: 600;
+  color: #111827;
+}
+
+.cell-reason {
+  color: #4b5563;
+  max-width: 240px;
+}
+
+.text-center {
+  text-align: center;
+}
+
+/* ==========================================================================
+   Leave Status Badges
+   ========================================================================== */
+.leave-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-indicator-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* Approved Status */
+.status-badge-approved {
+  background-color: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.status-badge-approved .status-indicator-dot {
+  background-color: #10b981;
+}
+
+/* Pending Status */
+.status-badge-pending {
+  background-color: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.status-badge-pending .status-indicator-dot {
+  background-color: #f59e0b;
+}
+
+/* Rejected Status */
+.status-badge-rejected {
+  background-color: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.status-badge-rejected .status-indicator-dot {
+  background-color: #ef4444;
+}
+
+/* ==========================================================================
+   Mobile Card View (< 768px)
+   ========================================================================== */
+.leave-mobile-cards {
+  display: none;
+  padding: 1rem;
+}
+
+.leave-mobile-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  box-sizing: border-box;
+}
+
+.mobile-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.mobile-leave-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+  color: #1f2937;
+  font-size: 0.875rem;
+}
+
+.mobile-card-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8125rem;
+  gap: 0.5rem;
+}
+
+.mobile-card-label {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.mobile-card-value {
+  color: #111827;
+  text-align: right;
+  word-break: break-word;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Empty State UI
+   ========================================================================== */
+.leaves-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3.5rem 1.5rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.empty-state-icon-box {
+  width: 56px;
+  height: 56px;
+  background-color: #f3f4f6;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  margin-bottom: 1rem;
+}
+
+.empty-state-icon-box svg {
+  width: 28px;
+  height: 28px;
+}
+
+.empty-state-heading {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 0.375rem 0;
+}
+
+.empty-state-text {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0 0 1.25rem 0;
+}
+
+.empty-state-reset-btn {
+  padding: 0.5rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background-color: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.15s ease;
+}
+
+.empty-state-reset-btn:hover {
+  background-color: #1d4ed8;
+}
+
+.empty-state-reset-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   Responsive Breakpoints
+   - Tablet: 768px - 1023px
+   - Mobile: 320px - 767px
+   ========================================================================== */
+
+/* Tablet & Intermediate Desktop */
+@media (max-width: 1023px) {
+  .leave-balance-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+}
+
+/* Mobile Screens */
+@media (max-width: 767px) {
+  .leaves-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .leaves-apply-button {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px; /* Touch target */
+  }
+
+  .leave-balance-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .leaves-controls-card {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 1rem;
+  }
+
+  .leaves-search-box {
+    min-width: 100%;
+  }
+
+  .leaves-filter-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .filter-select-wrapper {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .leaves-select {
+    width: 100%;
+    min-height: 44px; /* Touch target */
+  }
+
+  .leaves-reset-filters-btn {
+    min-height: 44px;
+    width: 100%;
+  }
+
+  /* Switch Table to Mobile Card View */
+  .leave-table-container {
+    display: none;
+  }
+
+  .leave-mobile-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+  }
+}
+
+/* Very Narrow Mobile (320px - 360px) */
+@media (max-width: 360px) {
+  .remaining-number {
+    font-size: 1.5rem;
+  }
+
+  .balance-card-header {
+    gap: 0.5rem;
+  }
+
+  .balance-code-badge {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    font-size: 0.8125rem;
+  }
+}

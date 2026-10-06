@@ -1,0 +1,162 @@
+const nodemailer = require('nodemailer');
+
+/**
+ * Creates and configures the Nodemailer SMTP transporter.
+ * Values are retrieved strictly from environment variables.
+ */
+const createTransporter = () => {
+  const host = process.env.SMTP_HOST || process.env.EMAIL_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.SMTP_PORT || process.env.EMAIL_PORT, 10) || 465;
+  const secure = process.env.EMAIL_SECURE === 'true' || port === 465;
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASSWORD;
+
+  // If credentials are not configured, warn on server (without exposing secrets)
+  if (!user || !pass) {
+    if (process.env.NODE_ENV === 'production') {
+      console.warn(
+        'Warning: SMTP_USER/EMAIL_USER or SMTP_PASS/EMAIL_PASSWORD is not configured. Email dispatch will be unavailable.'
+      );
+    }
+  }
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: {
+      user,
+      pass,
+    },
+  });
+};
+
+/**
+ * Sanitizes error messages to ensure SMTP credentials or passwords are never logged.
+ */
+const sanitizeEmailError = (message) => {
+  if (!message || typeof message !== 'string') return 'Unknown email delivery error';
+  return message
+    .replace(/:\/\/[^@]+@/, '://***:***@')
+    .replace(/(password|pass|secret)\s*[:=]\s*[^\s,]+/gi, '$1=***');
+};
+
+/**
+ * Sends a professional OTP email to the user.
+ *
+ * @param {Object} options
+ * @param {string} options.to - Recipient email address.
+ * @param {string} options.otp - 6-digit numeric OTP.
+ * @returns {Promise<{ success: boolean, messageId: string }>}
+ */
+const sendOtpEmail = async ({ to, otp }) => {
+  if (!to) {
+    const error = new Error('Recipient email is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!otp) {
+    const error = new Error('OTP is required for delivery.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const from = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'no-reply@gaintpro.com';
+  const subject = 'Your GaintPro Employee Portal Login OTP';
+
+  const textContent = `Hello,
+
+Your OTP for signing in to the GaintPro Employee Portal is:
+
+${otp}
+
+This OTP is valid for 5 minutes.
+Do not share this OTP with anyone.
+
+If you did not request this OTP, you can safely ignore this email.
+
+Regards,
+GaintPro Employee Portal`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f6f8; margin: 0; padding: 24px; color: #1e293b;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 540px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+    <tr>
+      <td style="padding: 24px 32px; background-color: #0f172a; text-align: center;">
+        <h1 style="margin: 0; font-size: 20px; font-weight: 600; color: #ffffff; letter-spacing: 0.5px;">GaintPro Employee Portal</h1>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding: 32px;">
+        <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.5; color: #334155;">Hello,</p>
+        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.5; color: #334155;">Your one-time password (OTP) for signing in to the <strong>GaintPro Employee Portal</strong> is:</p>
+        
+        <div style="background-color: #f1f5f9; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 18px; text-align: center; margin: 0 0 24px;">
+          <span style="font-family: 'Courier New', Courier, monospace; font-size: 32px; font-weight: 700; letter-spacing: 6px; color: #0f172a;">${otp}</span>
+        </div>
+
+        <p style="margin: 0 0 12px; font-size: 14px; line-height: 1.5; color: #475569;">
+          <strong>Security Notice:</strong>
+        </p>
+        <ul style="margin: 0 0 24px; padding-left: 20px; font-size: 13px; line-height: 1.6; color: #64748b;">
+          <li>This OTP is valid for <strong>5 minutes</strong>.</li>
+          <li><strong>Do not share this OTP</strong> with anyone. GaintPro staff will never ask for your OTP.</li>
+          <li>If you did not request this OTP, you can safely ignore this email.</li>
+        </ul>
+
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+
+        <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #94a3b8;">
+          Regards,<br />
+          <strong style="color: #64748b;">GaintPro Employee Portal Team</strong>
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  try {
+    const transporter = createTransporter();
+    const info = await transporter.sendMail({
+      from,
+      to,
+      subject,
+      text: textContent,
+      html: htmlContent,
+    });
+
+    return {
+      success: true,
+      messageId: info.messageId,
+    };
+  } catch (error) {
+    console.error('SMTP email error:', {
+      name: error?.name,
+      message: sanitizeEmailError(error?.message),
+      code: error?.code,
+      command: error?.command,
+      response: error?.response,
+      responseCode: error?.responseCode,
+    });
+
+    const deliveryError = new Error('Failed to deliver verification code. Please try again later.');
+    deliveryError.statusCode = 502;
+    throw deliveryError;
+  }
+};
+
+module.exports = {
+  sendOtpEmail,
+  // Exported for testing or verification
+  createTransporter,
+  sanitizeEmailError,
+};

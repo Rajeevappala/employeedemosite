@@ -1,0 +1,255 @@
+/* ==========================================================================
+   Portal Navbar Component
+   ========================================================================== */
+.portal-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 1rem;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* ==========================================================================
+   Left Section: Hamburger & Branding
+   ========================================================================== */
+.navbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.navbar-hamburger-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  color: #1f2937;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.navbar-hamburger-btn:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.navbar-hamburger-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.hamburger-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  user-select: none;
+}
+
+.navbar-logo-badge {
+  width: 34px;
+  height: 34px;
+  background-color: #2563eb;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.navbar-logo-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.navbar-brand-text {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: #1f2937;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   Right Section: Notifications & User Profile
+   ========================================================================== */
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.navbar-icon-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  color: #4b5563;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.navbar-icon-btn:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.navbar-icon-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.navbar-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.notification-badge-dot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  background-color: #2563eb;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+}
+
+.notification-badge-count {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  background-color: #ef4444;
+  color: #ffffff;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #ffffff;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.navbar-user-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  user-select: none;
+}
+
+.navbar-avatar {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.avatar-user-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.navbar-user-details {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.navbar-employee-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.25;
+}
+
+.navbar-employee-role {
+  font-size: 0.75rem;
+  color: #6b7280;
+  line-height: 1.2;
+}
+
+/* ==========================================================================
+   Responsive Breakpoints
+   ========================================================================== */
+
+/* Desktop screens: Hide hamburger button */
+@media (min-width: 1024px) {
+  .portal-navbar {
+    padding: 0 1.5rem;
+  }
+
+  .navbar-hamburger-btn {
+    display: none;
+  }
+}
+
+/* Mobile & Small screens (< 640px): Compact profile */
+@media (max-width: 639px) {
+  .portal-navbar {
+    padding: 0 0.75rem;
+  }
+
+  .navbar-user-details {
+    display: none;
+  }
+
+  .navbar-user-profile {
+    padding: 0;
+  }
+
+  .navbar-brand-text {
+    font-size: 0.9375rem;
+  }
+}
+
+/* Very narrow devices (<= 360px): Shorten text */
+@media (max-width: 360px) {
+  .navbar-brand-text {
+    font-size: 0.875rem;
+  }
+
+  .navbar-right {
+    gap: 0.5rem;
+  }
+}

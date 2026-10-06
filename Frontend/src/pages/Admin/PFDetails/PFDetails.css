@@ -1,0 +1,344 @@
+/* ==========================================================================
+   Admin PF Details Management Page Styles
+   Organization: GaintPro Software Technologies
+   ========================================================================== */
+
+.admin-pf-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* ==========================================================================
+   Header Section
+   ========================================================================== */
+.admin-pf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.admin-pf-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.admin-pf-title {
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.admin-pf-subtitle {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Toast Banner */
+.admin-pf-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 0.5rem;
+  color: #166534;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+  animation: pfFadeIn 0.2s ease;
+}
+
+.admin-pf-toast svg {
+  width: 18px;
+  height: 18px;
+  color: #16a34a;
+  flex-shrink: 0;
+}
+
+@keyframes pfFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================================================
+   Summary Cards Grid (4 Cards)
+   ========================================================================== */
+.admin-pf-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.25rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.admin-pf-stat-card {
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  min-width: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.admin-pf-stat-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  transform: translateY(-2px);
+}
+
+.stat-neutral {
+  background-color: #f1f5f9;
+  color: #64748b;
+}
+
+/* ==========================================================================
+   PF Table Card & Specific Table Styles
+   ========================================================================== */
+.admin-pf-table-card {
+  padding: 0;
+  overflow: visible;
+}
+
+.text-contrib {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+/* ==========================================================================
+   Contribution Overview Section (Below Table)
+   ========================================================================== */
+.admin-pf-overview-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-contribution-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin-top: 0.5rem;
+}
+
+.admin-contribution-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 1.25rem;
+  border-radius: 0.625rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  box-sizing: border-box;
+}
+
+.box-blue {
+  border-left: 4px solid #2563eb;
+}
+
+.box-purple {
+  border-left: 4px solid #7c3aed;
+}
+
+.box-green {
+  border-left: 4px solid #16a34a;
+}
+
+.contrib-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.contrib-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.contrib-period {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.contrib-desc {
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+/* ==========================================================================
+   PF Details Modal Shell
+   ========================================================================== */
+.admin-pf-modal-shell {
+  max-width: 640px;
+}
+
+.admin-pf-modal-header-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.admin-pf-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.admin-pf-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.admin-pf-section-title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid #e2e8f0;
+  letter-spacing: -0.01em;
+}
+
+.admin-pf-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.875rem 1.25rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  box-sizing: border-box;
+}
+
+.admin-pf-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.pf-item-lbl {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pf-item-val {
+  font-size: 0.875rem;
+  color: #0f172a;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+/* Readonly fields in edit form */
+.admin-field-readonly {
+  background-color: #f1f5f9 !important;
+  color: #475569 !important;
+  cursor: not-allowed;
+  border-color: #e2e8f0 !important;
+}
+
+/* ==========================================================================
+   Responsive Breakpoints
+   320px, 375px, 414px, 768px, 1024px, 1440px, 1920px
+   ========================================================================== */
+
+/* Medium Desktop / Tablet Landscape (1024px - 1279px) */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .admin-pf-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Tablet (768px - 1023px) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .admin-pf-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-contribution-stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mobile Devices (< 768px) */
+@media (max-width: 767px) {
+  .admin-pf-page {
+    gap: 1.25rem;
+  }
+
+  .admin-pf-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-pf-header .admin-btn {
+    width: 100%;
+  }
+
+  .admin-pf-summary-grid {
+    grid-template-columns: 1fr;
+    gap: 0.875rem;
+  }
+
+  .admin-contribution-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-pf-section-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}
+
+/* Small Mobile (<= 414px) */
+@media (max-width: 414px) {
+  .admin-pf-title {
+    font-size: 1.375rem;
+  }
+
+  .contrib-value {
+    font-size: 1.25rem;
+  }
+
+  .admin-pf-modal-header-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.375rem;
+  }
+}

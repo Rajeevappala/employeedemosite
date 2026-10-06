@@ -1,0 +1,772 @@
+/* ==========================================================================
+   Employee Attendance Page Styles
+   Organization: GaintPro Software Technologies
+   ========================================================================== */
+
+.emp-attendance-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* ==========================================================================
+   Page Header Card & Month Selector
+   ========================================================================== */
+.emp-att-header-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.emp-att-header-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.emp-att-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.emp-att-title {
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.emp-att-subtitle {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Month Selector Controls */
+.emp-att-month-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.375rem;
+  box-sizing: border-box;
+}
+
+.emp-att-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  background-color: #ffffff;
+  border-radius: 0.375rem;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.emp-att-nav-btn:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.emp-att-nav-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.emp-att-current-month {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #0f172a;
+  min-width: 150px;
+  justify-content: center;
+}
+
+.emp-att-current-month svg {
+  width: 16px;
+  height: 16px;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+/* Quick Month Jump Chips */
+.emp-att-month-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-top: 0.5rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.emp-att-chip {
+  padding: 0.375rem 0.875rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: 1px solid #e2e8f0;
+  background-color: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.emp-att-chip:hover {
+  border-color: #cbd5e1;
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+.emp-att-chip.active {
+  background-color: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+}
+
+/* ==========================================================================
+   Summary Cards Grid (7 Cards)
+   ========================================================================== */
+.emp-att-summary-section {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.emp-att-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.emp-att-stat-card {
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.125rem 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  min-width: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.emp-att-stat-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  transform: translateY(-2px);
+}
+
+.emp-att-stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+}
+
+.stat-border-primary::before { background-color: #2563eb; }
+.stat-border-green::before   { background-color: #16a34a; }
+.stat-border-red::before     { background-color: #dc2626; }
+.stat-border-amber::before   { background-color: #d97706; }
+.stat-border-blue::before    { background-color: #3b82f6; }
+.stat-border-yellow::before  { background-color: #eab308; }
+.stat-border-purple::before  { background-color: #8b5cf6; }
+.stat-border-indigo::before  { background-color: #6366f1; }
+
+.stat-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.375rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-value-group {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.stat-number {
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.stat-unit {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.stat-subtext {
+  font-size: 0.6875rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.text-green  { color: #16a34a; }
+.text-red    { color: #dc2626; }
+.text-amber  { color: #d97706; }
+.text-blue   { color: #2563eb; }
+.text-yellow { color: #ca8a04; }
+.text-purple { color: #7c3aed; }
+.text-indigo { color: #4f46e5; }
+
+/* ==========================================================================
+   Shared Card Container
+   ========================================================================== */
+.emp-att-card {
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.emp-att-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #f1f5f9;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.card-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.emp-att-card-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.emp-att-card-desc {
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.emp-att-count-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #2563eb;
+  background-color: #eff6ff;
+  border: 1px solid #dbeafe;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+}
+
+/* ==========================================================================
+   Calendar Grid & Legend
+   ========================================================================== */
+.emp-calendar-container {
+  padding: 1.25rem 1.5rem;
+  box-sizing: border-box;
+  width: 100%;
+  overflow-x: auto;
+}
+
+.emp-calendar-header-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
+.emp-calendar-col-header {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.5rem 0.25rem;
+  background-color: #f8fafc;
+  border-radius: 0.375rem;
+}
+
+.emp-calendar-col-header.is-sunday {
+  color: #dc2626;
+  background-color: #fef2f2;
+}
+
+.emp-calendar-days-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.emp-calendar-day-cell {
+  min-height: 80px;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.emp-calendar-day-cell:hover:not(.is-empty) {
+  border-color: #94a3b8;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.emp-calendar-day-cell.is-empty {
+  background-color: #f8fafc;
+  border-color: #f1f5f9;
+  border-style: dashed;
+}
+
+.cal-day-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cal-day-number {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.cal-day-bottom {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.cal-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-status-code {
+  display: none;
+}
+
+.cal-status-full {
+  display: inline;
+}
+
+/* Status Pill Color Themes */
+.att-status-present {
+  background-color: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.att-status-absent {
+  background-color: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.att-status-leave {
+  background-color: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.att-status-wfh {
+  background-color: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.att-status-halfday {
+  background-color: #fef9c3;
+  color: #a16207;
+  border: 1px solid #fef08a;
+}
+
+.att-status-holiday {
+  background-color: #ede9fe;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+
+.att-status-weekoff {
+  background-color: #e0e7ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+
+.att-status-unmarked {
+  background-color: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+/* Cell border accents */
+.att-status-present-cell { border-top: 3px solid #16a34a; }
+.att-status-absent-cell  { border-top: 3px solid #dc2626; }
+.att-status-leave-cell   { border-top: 3px solid #d97706; }
+.att-status-wfh-cell     { border-top: 3px solid #2563eb; }
+.att-status-halfday-cell { border-top: 3px solid #eab308; }
+.att-status-holiday-cell { border-top: 3px solid #8b5cf6; }
+.att-status-weekoff-cell { border-top: 3px solid #6366f1; }
+
+/* Calendar Legend Bar */
+.emp-att-legend-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1.5rem;
+  background-color: #f8fafc;
+  border-top: 1px solid #f1f5f9;
+  flex-wrap: wrap;
+  box-sizing: border-box;
+}
+
+.legend-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.legend-items {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: #475569;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-present { background-color: #16a34a; }
+.dot-absent  { background-color: #dc2626; }
+.dot-leave   { background-color: #d97706; }
+.dot-wfh     { background-color: #2563eb; }
+.dot-halfday { background-color: #eab308; }
+.dot-holiday { background-color: #8b5cf6; }
+.dot-weekoff { background-color: #6366f1; }
+
+/* ==========================================================================
+   Daily Attendance History Table
+   ========================================================================== */
+.emp-att-table-container {
+  width: 100%;
+  overflow-x: auto;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+}
+
+.emp-att-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.emp-att-table thead th {
+  background-color: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.emp-att-table tbody td {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.emp-att-table tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+.emp-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+.emp-marked-by-pill {
+  display: inline-block;
+  font-size: 0.75rem;
+  color: #64748b;
+  background-color: #f1f5f9;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.25rem;
+  font-weight: 500;
+}
+
+.emp-att-empty-state {
+  text-align: center;
+  padding: 2.5rem 1rem !important;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* ==========================================================================
+   Responsive Breakpoints
+   320px, 375px, 414px, 768px, 1024px, 1440px, 1920px
+   ========================================================================== */
+
+/* Medium Desktop / Tablet Landscape (1024px - 1279px) */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .emp-att-summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Tablet Portrait (768px - 1023px) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .emp-att-summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .emp-att-header-info {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .emp-att-month-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* Mobile Devices (< 768px) */
+@media (max-width: 767px) {
+  .emp-attendance-page {
+    gap: 1.25rem;
+  }
+
+  .emp-att-header-card {
+    padding: 1.25rem;
+  }
+
+  .emp-att-title {
+    font-size: 1.375rem;
+  }
+
+  .emp-att-header-info {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .emp-att-month-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .emp-att-current-month {
+    min-width: auto;
+    font-size: 0.875rem;
+  }
+
+  .emp-att-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .emp-att-stat-card {
+    padding: 0.875rem;
+  }
+
+  .emp-att-stat-card:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .stat-number {
+    font-size: 1.375rem;
+  }
+
+  .emp-calendar-container {
+    padding: 1rem;
+  }
+
+  .emp-calendar-days-grid,
+  .emp-calendar-header-row {
+    gap: 0.25rem;
+  }
+
+  .emp-calendar-day-cell {
+    min-height: 58px;
+    padding: 0.25rem;
+    border-radius: 0.375rem;
+  }
+
+  .cal-day-number {
+    font-size: 0.75rem;
+  }
+
+  .cal-status-full {
+    display: none;
+  }
+
+  .cal-status-code {
+    display: inline;
+    font-size: 0.625rem;
+  }
+
+  .cal-status-pill {
+    padding: 0.15rem 0.3rem;
+  }
+
+  .emp-att-legend-bar {
+    padding: 0.75rem 1rem;
+    gap: 0.625rem;
+  }
+
+  .legend-items {
+    gap: 0.625rem;
+  }
+
+  .legend-item {
+    font-size: 0.75rem;
+  }
+
+  .emp-att-card-header {
+    padding: 1rem 1.25rem;
+  }
+
+  .emp-att-table thead th,
+  .emp-att-table tbody td {
+    padding: 0.75rem 1rem;
+  }
+}
+
+/* Small Mobile (<= 414px) */
+@media (max-width: 414px) {
+  .emp-att-header-card {
+    padding: 1rem;
+  }
+
+  .emp-att-title {
+    font-size: 1.25rem;
+  }
+
+  .emp-att-month-chips {
+    gap: 0.375rem;
+  }
+
+  .emp-att-chip {
+    padding: 0.25rem 0.625rem;
+    font-size: 0.75rem;
+  }
+
+  .emp-att-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .emp-att-stat-card:last-child {
+    grid-column: auto;
+  }
+
+  .emp-calendar-container {
+    padding: 0.75rem;
+  }
+
+  .emp-calendar-day-cell {
+    min-height: 50px;
+    padding: 0.2rem;
+  }
+
+  .emp-calendar-col-header {
+    font-size: 0.6875rem;
+    padding: 0.25rem 0.1rem;
+  }
+}

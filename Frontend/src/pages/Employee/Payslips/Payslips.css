@@ -1,0 +1,747 @@
+/* ==========================================================================
+   Employee Payslips Page Styles
+   gaingpro Employee Management Portal
+   ========================================================================== */
+
+.employee-payslips-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* Screen reader only utility */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ==========================================================================
+   Page Header
+   ========================================================================== */
+.payslips-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.payslips-header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #2563eb;
+  margin-bottom: 0.25rem;
+}
+
+.payslips-page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.payslips-page-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   Download Notice Banner
+   ========================================================================== */
+.payslips-notice-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.5rem;
+  color: #1e40af;
+  font-size: 0.875rem;
+  box-sizing: border-box;
+}
+
+.payslips-notice-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.payslips-notice-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: #2563eb;
+}
+
+.payslips-notice-dismiss {
+  background: none;
+  border: none;
+  color: #1e40af;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+}
+
+.payslips-notice-dismiss:hover {
+  background-color: rgba(30, 64, 175, 0.1);
+}
+
+.payslips-notice-dismiss:focus-visible {
+  outline: 2px solid #2563eb;
+}
+
+/* ==========================================================================
+   Filter & Controls Toolbar
+   ========================================================================== */
+.payslips-controls-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1.25rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+}
+
+.payslips-filters-group {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.payslips-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.payslips-filter-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #4b5563;
+  white-space: nowrap;
+}
+
+.payslips-select {
+  padding: 0.5rem 2rem 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  color: #1f2937;
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-family: inherit;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.625rem center;
+  background-size: 1rem 1rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  min-width: 130px;
+}
+
+.payslips-select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.payslips-count-badge {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #6b7280;
+  margin-left: auto;
+}
+
+/* ==========================================================================
+   Payslips Grid / List
+   ========================================================================== */
+.payslips-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1.25rem;
+}
+
+.payslip-card {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.payslip-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  border-color: #cbd5e1;
+}
+
+/* Card Header */
+.payslip-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.875rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.payslip-period-info {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.payslip-calendar-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 0.5rem;
+  background-color: #eff6ff;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.payslip-calendar-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.payslip-period-headings {
+  display: flex;
+  flex-direction: column;
+}
+
+.payslip-period-month {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.payslip-period-filename {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Status Badges */
+.payslip-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.payslip-status-badge.processed {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #dbeafe;
+}
+
+.payslip-status-badge.paid {
+  background-color: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.payslip-status-badge.pending {
+  background-color: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fef3c7;
+}
+
+/* Attendance Metrics */
+.payslip-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background-color: #f8fafc;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.payslip-metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.payslip-metric-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.payslip-metric-value {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* Salary Summary Breakdown */
+.payslip-salary-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.payslip-salary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.8125rem;
+}
+
+.payslip-salary-label {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.payslip-salary-value {
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.payslip-salary-row.net-salary-row {
+  margin-top: 0.375rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.payslip-salary-row.net-salary-row .payslip-salary-label {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.payslip-salary-row.net-salary-row .payslip-salary-value {
+  font-size: 1.0625rem;
+  font-weight: 800;
+  color: #15803d;
+}
+
+/* Metadata fallback when payroll is null */
+.payslip-meta-fallback {
+  padding: 0.75rem;
+  background-color: #f8fafc;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.8125rem;
+  color: #64748b;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* Card Actions */
+.payslip-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: auto;
+}
+
+.payslip-btn {
+  flex: 1;
+  min-height: 40px;
+  padding: 0.4375rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  font-family: inherit;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.payslip-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.payslip-btn-view {
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #2563eb;
+}
+
+.payslip-btn-view:hover {
+  background-color: #dbeafe;
+}
+
+.payslip-btn-view:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.payslip-btn-download {
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #374151;
+}
+
+.payslip-btn-download:hover {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+  color: #111827;
+}
+
+.payslip-btn-download:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   State Displays: Loading, Empty, Error
+   ========================================================================== */
+.payslips-state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3.5rem 1.5rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.payslips-state-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.payslips-state-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.payslips-state-icon.loading {
+  background-color: #eff6ff;
+  color: #2563eb;
+}
+
+.payslips-state-icon.empty {
+  background-color: #f3f4f6;
+  color: #9ca3af;
+}
+
+.payslips-state-icon.error {
+  background-color: #fef2f2;
+  color: #dc2626;
+}
+
+.payslips-state-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 0.5rem 0;
+}
+
+.payslips-state-subtitle {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
+  max-width: 380px;
+  line-height: 1.5;
+}
+
+.payslips-retry-btn {
+  margin-top: 1.25rem;
+  padding: 0.5rem 1.25rem;
+  background-color: #2563eb;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.payslips-retry-btn:hover {
+  background-color: #1d4ed8;
+}
+
+.payslips-retry-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   Pagination Controls
+   ========================================================================== */
+.payslips-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 1rem 0;
+}
+
+.payslips-page-btn {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 0.375rem;
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+  color: #374151;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.payslips-page-btn:hover:not(:disabled) {
+  background-color: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.payslips-page-btn.active {
+  background-color: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.payslips-page-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   Modal PDF Preview Window
+   ========================================================================== */
+.payslip-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1rem;
+  box-sizing: border-box;
+  animation: payslipFadeIn 0.2s ease-out;
+}
+
+@keyframes payslipFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.payslip-modal-window {
+  background-color: #ffffff;
+  border-radius: 0.75rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  max-width: 900px;
+  width: 95%;
+  max-height: 90vh;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.payslip-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.payslip-modal-headings {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.payslip-modal-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+  word-break: break-word;
+}
+
+.payslip-modal-file {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  word-break: break-all;
+}
+
+.payslip-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.payslip-modal-close:hover {
+  color: #111827;
+}
+
+.payslip-modal-content {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  background-color: #525659;
+}
+
+.payslip-preview-frame {
+  width: 100%;
+  height: 65vh;
+  min-height: 480px;
+  border: none;
+  display: block;
+}
+
+.payslip-modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.875rem 1.25rem;
+  background-color: #f9fafb;
+  border-top: 1px solid #e5e7eb;
+}
+
+/* ==========================================================================
+   Responsive Adaptations
+   320px, 375px, 414px, 768px, 1024px, 1440px, 1920px
+   ========================================================================== */
+@media (max-width: 768px) {
+  .payslips-controls-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .payslips-filters-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .payslips-filter-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .payslips-select {
+    width: 100%;
+  }
+
+  .payslips-count-badge {
+    margin-left: 0;
+    text-align: right;
+  }
+
+  .payslips-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .payslip-preview-frame {
+    height: 55vh;
+    min-height: 360px;
+  }
+}
+
+@media (max-width: 480px) {
+  .employee-payslips-page {
+    gap: 1rem;
+  }
+
+  .payslips-page-title {
+    font-size: 1.25rem;
+  }
+
+  .payslip-card {
+    padding: 1rem;
+  }
+
+  .payslip-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .payslip-metrics-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .payslip-card-actions {
+    flex-direction: column;
+  }
+
+  .payslip-btn {
+    width: 100%;
+  }
+}
