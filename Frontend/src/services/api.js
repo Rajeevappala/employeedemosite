@@ -764,6 +764,20 @@ const api = {
         body: JSON.stringify(data),
       }),
 
+    // GET /api/admin/payroll/authorization-assets-status
+    getAuthorizationAssetsStatus: () =>
+      request('/admin/payroll/authorization-assets-status'),
+
+    // GET /api/admin/payroll/preview-payslip-pdf
+    previewPayslipPdf: ({ employeeId, month, year } = {}) => {
+      const params = new URLSearchParams();
+      if (employeeId) params.append('employee_id', employeeId);
+      if (month) params.append('month', month);
+      if (year) params.append('year', year);
+      const query = params.toString() ? `?${params.toString()}` : '';
+      return downloadFile(`/admin/payroll/preview-payslip-pdf${query}`);
+    },
+
     // GET /api/admin/payroll/template (Binary Excel download)
     downloadPayrollTemplate: () => downloadFile('/admin/payroll/template'),
 
@@ -783,6 +797,34 @@ const api = {
         method: 'POST',
         body: JSON.stringify({ importId, importMode }),
       }),
+
+    // POST /api/admin/payroll/retry-failed-payslips
+    retryFailedPayslips: (data) =>
+      request('/admin/payroll/retry-failed-payslips', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    // GET /api/admin/payroll/report (Binary Excel download)
+    downloadPayrollReport: (params = {}) => {
+      const searchParams = new URLSearchParams();
+      if (params.month) searchParams.append('month', params.month);
+      if (params.year) searchParams.append('year', params.year);
+      if (params.batchId) searchParams.append('batchId', params.batchId);
+      const qs = searchParams.toString();
+      return downloadFile(`/admin/payroll/report${qs ? `?${qs}` : ''}`);
+    },
+
+    // GET /api/admin/payroll/batches
+    getPayrollBatches: (params = {}) => {
+      const searchParams = new URLSearchParams();
+      if (params.month) searchParams.append('month', params.month);
+      if (params.year) searchParams.append('year', params.year);
+      if (params.page) searchParams.append('page', params.page);
+      if (params.limit) searchParams.append('limit', params.limit);
+      const qs = searchParams.toString();
+      return request(`/admin/payroll/batches${qs ? `?${qs}` : ''}`, { method: 'GET' });
+    },
 
     // GET /api/admin/payroll/monthly-payslips
     getMonthlyPayslips: (params = {}) => {

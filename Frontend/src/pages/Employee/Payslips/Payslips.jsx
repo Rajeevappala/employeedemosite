@@ -456,8 +456,9 @@ function Payslips() {
           {payslips.map((slip) => {
             const monthLabel = slip.month ? getMonthName(slip.month) : '';
             const periodTitle = monthLabel && slip.year ? `${monthLabel} ${slip.year}` : slip.file_name || 'Payslip';
-            const status = slip.payroll?.status || 'Processed';
-            const statusClass = status.toLowerCase();
+            const isAvailable = slip.is_available !== false && Boolean(slip.document_id || (slip.id && slip.availability_status === 'Available'));
+            const availability = slip.availability_status || (isAvailable ? 'Available' : 'Processing');
+            const statusClass = availability.toLowerCase();
 
             return (
               <article key={slip.id} className="payslip-card" aria-labelledby={`payslip-title-${slip.id}`}>
@@ -481,7 +482,7 @@ function Payslips() {
                   </div>
 
                   <span className={`payslip-status-badge ${statusClass}`}>
-                    {status}
+                    {availability}
                   </span>
                 </div>
 
@@ -491,11 +492,11 @@ function Payslips() {
                     <div className="payslip-metrics-grid">
                       <div className="payslip-metric-item">
                         <span className="payslip-metric-label">Working Days</span>
-                        <span className="payslip-metric-value">{slip.payroll.working_days}</span>
+                        <span className="payslip-metric-value">{slip.payroll.working_days ?? '-'}</span>
                       </div>
                       <div className="payslip-metric-item">
                         <span className="payslip-metric-label">Payable Days</span>
-                        <span className="payslip-metric-value">{slip.payroll.payable_days}</span>
+                        <span className="payslip-metric-value">{slip.payroll.payable_days ?? '-'}</span>
                       </div>
                     </div>
 
@@ -524,31 +525,39 @@ function Payslips() {
 
                 {/* Card Actions */}
                 <div className="payslip-card-actions">
-                  <button
-                    type="button"
-                    className="payslip-btn payslip-btn-view"
-                    onClick={() => handleView(slip)}
-                    aria-label={`View ${periodTitle} payslip`}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                    View
-                  </button>
-                  <button
-                    type="button"
-                    className="payslip-btn payslip-btn-download"
-                    onClick={() => handleDownload(slip)}
-                    aria-label={`Download ${periodTitle} payslip`}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="7 10 12 15 17 10" />
-                      <line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                    Download
-                  </button>
+                  {isAvailable ? (
+                    <>
+                      <button
+                        type="button"
+                        className="payslip-btn payslip-btn-view"
+                        onClick={() => handleView(slip)}
+                        aria-label={`View ${periodTitle} payslip`}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                        View
+                      </button>
+                      <button
+                        type="button"
+                        className="payslip-btn payslip-btn-download"
+                        onClick={() => handleDownload(slip)}
+                        aria-label={`Download ${periodTitle} payslip`}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        Download
+                      </button>
+                    </>
+                  ) : (
+                    <div className="payslip-unavailable-notice" style={{ fontSize: '0.8125rem', color: '#64748b', fontStyle: 'italic', padding: '0.25rem 0' }}>
+                      Payslip PDF is not yet available for this period.
+                    </div>
+                  )}
                 </div>
               </article>
             );

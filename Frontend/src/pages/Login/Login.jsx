@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import gaintproLogo from '../../assets/gaintpro-logo.png';
 import './Login.css';
 
 function Login() {
@@ -180,22 +181,11 @@ function Login() {
     <main className="login-page">
       <div className="login-card">
         <header className="login-header">
-          <div className="login-logo-placeholder" aria-hidden="true">
-            <svg
-              className="login-logo-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <path d="M9 3v18" />
-              <path d="M14 9h4" />
-              <path d="M14 15h4" />
-            </svg>
-          </div>
+          <img
+            src={gaintproLogo}
+            alt="GaintPro Software Technologies logo"
+            className="login-brand-logo"
+          />
 
           <p className="login-org-name">GaintPro HRM Portal</p>
           <h1 className="login-title">Welcome Back</h1>

@@ -64,21 +64,20 @@ const getEmployeePayslips = async (req, res, next) => {
     const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
     const offset = (pageNum - 1) * limitNum;
 
-    // Build parameterized query
+    // Build parameterized query supporting both finalized documents and processed payroll records
     const whereConditions = [
-      `d.employee_id = $1`,
-      `LOWER(d.document_type) = 'payslip'`,
+      `(pr.employee_id = $1 OR d.employee_id = $1)`,
     ];
     const queryParams = [employeeId];
 
     if (parsedYear !== null) {
       queryParams.push(parsedYear);
-      whereConditions.push(`d.year = $${queryParams.length}`);
+      whereConditions.push(`(COALESCE(pr.year, d.year) = $${queryParams.length})`);
     }
 
     if (parsedMonth !== null) {
       queryParams.push(parsedMonth);
-      whereConditions.push(`d.month = $${queryParams.length}`);
+      whereConditions.push(`(COALESCE(pr.month, d.month) = $${queryParams.length})`);
     }
 
     const whereClause = whereConditions.join(' AND ');
@@ -86,26 +85,30 @@ const getEmployeePayslips = async (req, res, next) => {
     // 1. Get total count for pagination
     const countQuery = `
       SELECT COUNT(*) AS total
-      FROM public.documents d
+      FROM public.payroll_records pr
+      FULL OUTER JOIN (
+        SELECT * FROM public.documents WHERE LOWER(document_type) = 'payslip'
+      ) d ON d.employee_id = pr.employee_id AND d.month = pr.month AND d.year = pr.year
       WHERE ${whereClause}
     `;
     const countResult = await pool.query(countQuery, queryParams);
     const total = parseInt(countResult.rows[0]?.total || 0, 10);
 
-    // 2. Query items joined with authoritative payroll_records
+    // 2. Query items joined with authoritative payroll_records and availability status
     const dataQueryParams = [...queryParams, limitNum, offset];
     const limitParamIndex = queryParams.length + 1;
     const offsetParamIndex = queryParams.length + 2;
 
     const dataQuery = `
       SELECT 
-        d.id,
-        d.employee_id,
-        d.document_type,
-        d.file_name,
-        d.month,
-        d.year,
-        d.created_at,
+        d.id AS document_id,
+        COALESCE(d.id, pr.id) AS id,
+        COALESCE(pr.employee_id, d.employee_id) AS employee_id,
+        COALESCE(d.document_type, 'Payslip') AS document_type,
+        COALESCE(d.file_name, CONCAT('Payslip_', COALESCE(pr.employee_id, d.employee_id), '_', COALESCE(pr.month, d.month), '_', COALESCE(pr.year, d.year), '.pdf')) AS file_name,
+        COALESCE(pr.month, d.month) AS month,
+        COALESCE(pr.year, d.year) AS year,
+        COALESCE(d.created_at, pr.processed_at, pr.created_at) AS created_at,
         pr.working_days,
         pr.payable_days,
         pr.basic_salary,
@@ -117,14 +120,17 @@ const getEmployeePayslips = async (req, res, next) => {
         pr.other_deductions,
         pr.total_deductions,
         pr.net_salary,
-        pr.status AS payroll_status
-      FROM public.documents d
-      LEFT JOIN public.payroll_records pr 
-        ON pr.employee_id = d.employee_id 
-       AND pr.month = d.month 
-       AND pr.year = d.year
+        pr.status AS payroll_status,
+        CASE 
+          WHEN d.id IS NOT NULL THEN 'Available'
+          ELSE 'Processing'
+        END AS availability_status
+      FROM public.payroll_records pr
+      FULL OUTER JOIN (
+        SELECT * FROM public.documents WHERE LOWER(document_type) = 'payslip'
+      ) d ON d.employee_id = pr.employee_id AND d.month = pr.month AND d.year = pr.year
       WHERE ${whereClause}
-      ORDER BY d.year DESC NULLS LAST, d.month DESC NULLS LAST, d.created_at DESC
+      ORDER BY COALESCE(pr.year, d.year) DESC NULLS LAST, COALESCE(pr.month, d.month) DESC NULLS LAST, COALESCE(d.created_at, pr.created_at) DESC
       LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
     `;
 
@@ -132,16 +138,19 @@ const getEmployeePayslips = async (req, res, next) => {
 
     // 3. Map to safe response format excluding internal storage keys & filesystem paths
     const items = dataResult.rows.map((row) => ({
-      id: row.id,
+      id: row.document_id || row.id,
+      document_id: row.document_id || null,
       employee_id: row.employee_id,
       document_type: row.document_type,
       file_name: row.file_name,
       month: row.month,
       year: row.year,
       created_at: row.created_at,
-      payroll: row.working_days != null ? {
-        working_days: parseFloat(row.working_days) || 0,
-        payable_days: parseFloat(row.payable_days) || 0,
+      is_available: Boolean(row.document_id),
+      availability_status: row.availability_status || (row.document_id ? 'Available' : 'Processing'),
+      payroll: (row.working_days != null || row.net_salary != null) ? {
+        working_days: row.working_days != null ? (parseFloat(row.working_days) || 0) : null,
+        payable_days: row.payable_days != null ? (parseFloat(row.payable_days) || 0) : null,
         gross_salary: row.gross_salary,
         total_deductions: row.total_deductions,
         net_salary: row.net_salary,

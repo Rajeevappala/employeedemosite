@@ -29,6 +29,7 @@ const notFoundMiddleware = require('./middleware/notFoundMiddleware');
 const errorMiddleware = require('./middleware/errorMiddleware');
 const { requireActiveEmployee } = require('./middleware/activeEmployeeMiddleware');
 const { validateEnvironment } = require('./config/envValidator');
+const { verifySmtpConnection } = require('./services/emailService');
 
 // Validate critical environment configurations at server boot
 validateEnvironment();
@@ -201,6 +202,7 @@ let server;
 // Start server
 const startServer = async () => {
   await testDatabaseConnection();
+  verifySmtpConnection().catch(() => {});
 
   server = app.listen(PORT, () => {
     console.log(`Server is running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);

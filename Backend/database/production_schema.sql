@@ -176,12 +176,39 @@ CREATE TABLE IF NOT EXISTS payroll_profiles (
 );
 
 -- -----------------------------------------------------------------------------
+-- 8b. PAYROLL_BATCHES TABLE
+-- Tracks payroll batch import, validation, confirmation, and payslip generation workflow
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS payroll_batches (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    batch_number VARCHAR(50) UNIQUE NOT NULL,
+    month INTEGER NOT NULL,
+    year INTEGER NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'Uploaded',
+    total_records INTEGER NOT NULL DEFAULT 0,
+    valid_records INTEGER NOT NULL DEFAULT 0,
+    invalid_records INTEGER NOT NULL DEFAULT 0,
+    processed_records INTEGER NOT NULL DEFAULT 0,
+    payslips_generated INTEGER NOT NULL DEFAULT 0,
+    payslips_failed INTEGER NOT NULL DEFAULT 0,
+    total_gross_salary NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    total_deductions NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    total_net_salary NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    file_name VARCHAR(255),
+    error_summary JSONB DEFAULT '[]'::jsonb,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- -----------------------------------------------------------------------------
 -- 9. PAYROLL_RECORDS TABLE
 -- Monthly processed payslips and salary payouts
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS payroll_records (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     employee_id VARCHAR(20) NOT NULL REFERENCES employees(employee_id) ON DELETE CASCADE,
+    batch_id UUID REFERENCES payroll_batches(id) ON DELETE SET NULL,
     month INTEGER NOT NULL,
     year INTEGER NOT NULL,
     working_days NUMERIC(6, 2),
@@ -202,6 +229,11 @@ CREATE TABLE IF NOT EXISTS payroll_records (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_payroll_records_employee_month_year UNIQUE (employee_id, month, year)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_employee_payslip_period
+ON documents (employee_id, month, year)
+WHERE LOWER(document_type) = 'payslip';
+
 
 -- -----------------------------------------------------------------------------
 -- 10. OTP_VERIFICATIONS TABLE

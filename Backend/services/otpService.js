@@ -87,14 +87,30 @@ const requestOtp = async (rawEmail, options = {}) => {
   const isProd = process.env.NODE_ENV === 'production';
   const displayEmail = isProd ? maskEmail(email) : email;
 
-  // 1. Rate Limiting: Check cooldown (60 seconds)
-  const cooldownCheck = await pool.query(
-    `SELECT created_at FROM otp_verifications 
-     WHERE email = $1 AND created_at > NOW() - ($2 || ' seconds')::INTERVAL 
-     LIMIT 1`,
-    [email, RATE_LIMIT_COOLDOWN_SECONDS]
-  );
+  const tStart = performance.now();
 
+  // 1 & 2 & 3. Parallelize Cooldown check, Window limit check, and Account lookup
+  const [cooldownCheck, windowCheck, userResult] = await Promise.all([
+    pool.query(
+      `SELECT created_at FROM otp_verifications 
+       WHERE email = $1 AND created_at > NOW() - ($2 || ' seconds')::INTERVAL 
+       LIMIT 1`,
+      [email, RATE_LIMIT_COOLDOWN_SECONDS]
+    ),
+    pool.query(
+      `SELECT COUNT(*)::INTEGER AS count FROM otp_verifications 
+       WHERE email = $1 AND created_at > NOW() - ($2 || ' minutes')::INTERVAL`,
+      [email, RATE_LIMIT_WINDOW_MINUTES]
+    ),
+    pool.query(
+      `SELECT id, email, role, status FROM users WHERE LOWER(email) = $1`,
+      [email]
+    ),
+  ]);
+  const tAfterChecks = performance.now();
+  const checksDuration = (tAfterChecks - tStart).toFixed(2);
+
+  // Rate Limiting Enforcement
   if (cooldownCheck.rows.length > 0) {
     console.warn(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Rate-limit rejection: 60-second cooldown active for ${displayEmail}`);
     const error = new Error(
@@ -103,13 +119,6 @@ const requestOtp = async (rawEmail, options = {}) => {
     error.statusCode = 429;
     throw error;
   }
-
-  // 2. Rate Limiting: Check window limit (max 5 requests per 15 minutes)
-  const windowCheck = await pool.query(
-    `SELECT COUNT(*)::INTEGER AS count FROM otp_verifications 
-     WHERE email = $1 AND created_at > NOW() - ($2 || ' minutes')::INTERVAL`,
-    [email, RATE_LIMIT_WINDOW_MINUTES]
-  );
 
   if (windowCheck.rows[0]?.count >= RATE_LIMIT_MAX_PER_WINDOW) {
     console.warn(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Rate-limit rejection: 15-minute window limit exceeded for ${displayEmail}`);
@@ -120,18 +129,12 @@ const requestOtp = async (rawEmail, options = {}) => {
     throw error;
   }
 
-  // 3. Find user by email
-  const userResult = await pool.query(
-    `SELECT id, email, role, status FROM users WHERE LOWER(email) = $1`,
-    [email]
-  );
-
   const user = userResult.rows[0];
 
   // Anti-enumeration: If user does not exist or is not ACTIVE, return generic success
   // without inserting an OTP or revealing account state.
   if (!user) {
-    console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Account lookup: NOT FOUND for ${displayEmail}. Returning anti-enumeration response.`);
+    console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Account lookup: NOT FOUND for ${displayEmail}. Returning anti-enumeration response (Checks: ${checksDuration}ms).`);
     return {
       success: true,
       message: 'If the account is eligible, an OTP has been sent.',
@@ -139,7 +142,7 @@ const requestOtp = async (rawEmail, options = {}) => {
   }
 
   if (user.status !== 'ACTIVE') {
-    console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Account lookup: FOUND but INACTIVE (status: ${user.status}) for ${displayEmail}. Returning anti-enumeration response.`);
+    console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Account lookup: FOUND but INACTIVE (status: ${user.status}) for ${displayEmail}. Returning anti-enumeration response (Checks: ${checksDuration}ms).`);
     return {
       success: true,
       message: 'If the account is eligible, an OTP has been sent.',
@@ -149,6 +152,7 @@ const requestOtp = async (rawEmail, options = {}) => {
   console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Account lookup: FOUND and ACTIVE (Role: ${user.role}) for ${displayEmail}`);
 
   // 4. Invalidate previous active unverified OTPs for this user
+  const tDbStart = performance.now();
   await pool.query(
     `UPDATE otp_verifications 
      SET expires_at = NOW() 
@@ -157,12 +161,15 @@ const requestOtp = async (rawEmail, options = {}) => {
   );
 
   // 5. Generate secure OTP and hash it
+  const tGenStart = performance.now();
   const otp = generateSecureOtp();
   const otpHash = hashOtp(otp);
   const expiresAt = new Date(Date.now() + OTP_EXPIRATION_MINUTES * 60 * 1000);
+  const tGenEnd = performance.now();
+  const genDuration = (tGenEnd - tGenStart).toFixed(2);
 
   // 6. Store hashed OTP in database
-  console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] OTP generation started. Persisting hashed token to database...`);
+  console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] OTP generation completed. Persisting hashed token to database...`);
   let otpRecordId;
   try {
     const insertResult = await pool.query(
@@ -177,18 +184,34 @@ const requestOtp = async (rawEmail, options = {}) => {
     console.error(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] OTP persistence FAILURE for ${displayEmail}. Reason: ${dbErr.message}`);
     throw dbErr;
   }
+  const tDbEnd = performance.now();
+  const dbDuration = (tDbEnd - tDbStart).toFixed(2);
 
   // 7. Dispatch OTP via email delivery provider
   console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Email dispatch started for ${displayEmail} (TestMode: ${Boolean(options.isTestMode)})`);
+  const tEmailStart = performance.now();
   try {
     await sendOtpEmail({
       to: email,
       otp,
       isTestMode: Boolean(options.isTestMode),
     });
-    console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Email dispatch completed successfully for ${displayEmail}`);
+    const tEmailEnd = performance.now();
+    const emailDuration = (tEmailEnd - tEmailStart).toFixed(2);
+    const totalDuration = (tEmailEnd - tStart).toFixed(2);
+
+    console.log(
+      `[OTP_PERF] [${new Date().toISOString()}] Timing breakdown for ${displayEmail} - Checks: ${checksDuration}ms, Gen: ${genDuration}ms, DB: ${dbDuration}ms, Email: ${emailDuration}ms, Total: ${totalDuration}ms`
+    );
   } catch (deliveryError) {
-    console.error(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Email dispatch failed for ${displayEmail}. Reason: ${deliveryError.message}`);
+    const tEmailEnd = performance.now();
+    const emailDuration = (tEmailEnd - tEmailStart).toFixed(2);
+    const totalDuration = (tEmailEnd - tStart).toFixed(2);
+
+    console.error(
+      `[OTP_PERF] [${new Date().toISOString()}] Email dispatch failed after ${emailDuration}ms (Total: ${totalDuration}ms) for ${displayEmail}. Reason: ${deliveryError.message}`
+    );
+
     // If delivery fails, remove the undelivered OTP record to prevent leaving an orphaned active OTP
     if (otpRecordId) {
       await pool.query('DELETE FROM otp_verifications WHERE id = $1', [otpRecordId]).catch(() => {});

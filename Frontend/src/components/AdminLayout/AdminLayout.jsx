@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import gaintproLogo from '../../assets/gaintpro-logo.png';
 import './AdminLayout.css';
 
 const ADMIN_NAV_ITEMS = [
@@ -246,22 +247,11 @@ function AdminLayout() {
 
           {/* Admin Header Brand Display (Desktop & Mobile) */}
           <div className="admin-header-brand">
-            <div className="admin-navbar-logo-badge" aria-hidden="true">
-              <svg
-                className="admin-navbar-logo-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path d="M9 3v18" />
-                <path d="M14 9h4" />
-                <path d="M14 15h4" />
-              </svg>
-            </div>
+            <img
+              src={gaintproLogo}
+              alt="GaintPro Software Technologies logo"
+              className="admin-navbar-brand-logo"
+            />
             <span className="admin-navbar-brand-text">GaintPro HRM Portal</span>
             <span className="admin-brand-portal-tag">ADMIN</span>
           </div>

@@ -1,4 +1,5 @@
 import { useAuth } from '../../context/AuthContext';
+import gaintproLogo from '../../assets/gaintpro-logo.png';
 import './Navbar.css';
 
 function Navbar({ onToggleSidebar, isSidebarOpen }) {
@@ -46,22 +47,11 @@ function Navbar({ onToggleSidebar, isSidebarOpen }) {
         </button>
 
         <div className="navbar-brand">
-          <div className="navbar-logo-badge" aria-hidden="true">
-            <svg
-              className="navbar-logo-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <path d="M9 3v18" />
-              <path d="M14 9h4" />
-              <path d="M14 15h4" />
-            </svg>
-          </div>
+          <img
+            src={gaintproLogo}
+            alt="GaintPro Software Technologies logo"
+            className="navbar-brand-logo"
+          />
           <span className="navbar-brand-text">GaintPro HRM Portal</span>
         </div>
       </div>

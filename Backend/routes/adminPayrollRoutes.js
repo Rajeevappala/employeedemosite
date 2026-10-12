@@ -7,7 +7,7 @@ const { uploadSingleExcel, uploadSinglePayslipPdf } = require('../middleware/upl
 const { excelImportLimiter, fileUploadLimiter } = require('../middleware/rateLimitMiddleware');
 
 // All admin payroll routes require valid JWT session and role ADMIN.
-router.use(authenticateToken, requireRole('ADMIN'));
+router.use(authenticateToken, requireRole('ADMIN', 'SUPER_ADMIN'));
 
 // =============================================================================
 // Monthly Payslips Management
@@ -65,6 +65,15 @@ router.post(
   adminPayrollController.confirmPayrollImport
 );
 
+// POST /api/admin/payroll/retry-failed-payslips - Retry generating payslips for employees with failed/missing documents
+router.post('/retry-failed-payslips', adminPayrollController.retryFailedPayslips);
+
+// GET /api/admin/payroll/report - Download processing and audit report in Excel (.xlsx)
+router.get('/report', adminPayrollController.downloadPayrollReport);
+
+// GET /api/admin/payroll/batches - Batch execution history and workflow statuses
+router.get('/batches', adminPayrollController.getAdminPayrollBatches);
+
 // GET /api/admin/payroll/history - Distinct historical payroll periods
 router.get('/history', adminPayrollController.getAdminPayrollHistory);
 
@@ -82,6 +91,12 @@ router.post('/:employeeId/:year/:month/generate-payslip', adminPayrollController
 
 // POST /api/admin/payroll/:employeeId/generate-payslip - Generate PDF payslip for single employee with body params
 router.post('/:employeeId/generate-payslip', adminPayrollController.generateAdminPayslip);
+
+// GET /api/admin/payroll/authorization-assets-status - Status of company signature and stamp images
+router.get('/authorization-assets-status', adminPayrollController.getAuthorizationAssetsStatus);
+
+// GET /api/admin/payroll/preview-payslip-pdf - Real-time preview payslip PDF stream
+router.get('/preview-payslip-pdf', adminPayrollController.previewPayslipPdf);
 
 // GET /api/admin/payroll - List monthly payroll records with search/filters
 router.get('/', adminPayrollController.getAdminPayrollRecords);

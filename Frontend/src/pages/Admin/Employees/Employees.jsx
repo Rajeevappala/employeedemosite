@@ -223,11 +223,24 @@ function Employees() {
   };
 
   const handleExecutePermanentDelete = async () => {
-    if (!deleteTargetEmployee) return;
+    if (!deleteTargetEmployee || isDeleting) return;
     setDeleteError('');
 
-    if (deleteConfirmEmpId.trim().toUpperCase() !== deleteTargetEmployee.employee_id.toUpperCase()) {
-      setDeleteError('Confirmation Employee ID does not match target employee ID.');
+    const targetEmpId = String(
+      deleteTargetEmployee.employee_id ||
+      deleteTargetEmployee.employeeId ||
+      deleteTargetEmployee.id ||
+      ''
+    ).trim();
+
+    if (!targetEmpId) {
+      setDeleteError('Unable to identify target employee ID from record.');
+      return;
+    }
+
+    const trimmedInput = (deleteConfirmEmpId || '').trim();
+    if (trimmedInput.toUpperCase() !== targetEmpId.toUpperCase()) {
+      setDeleteError(`Confirmation Employee ID does not match. Expected "${targetEmpId}".`);
       return;
     }
 
@@ -238,12 +251,12 @@ function Employees() {
 
     setIsDeleting(true);
     try {
-      const res = await api.admin.deleteEmployeePermanently(deleteTargetEmployee.employee_id, {
-        confirmEmployeeId: deleteConfirmEmpId.trim().toUpperCase(),
+      const res = await api.admin.deleteEmployeePermanently(targetEmpId, {
+        confirmEmployeeId: trimmedInput.toUpperCase(),
         confirmCheckbox: true,
       });
 
-      showToast(res.message || `Employee ${deleteTargetEmployee.employee_id} permanently deleted.`);
+      showToast(res?.message || `Employee ${targetEmpId} permanently deleted.`);
       setDeleteTargetEmployee(null);
       setDeleteConfirmEmpId('');
       setDeleteConfirmChecked(false);
@@ -1483,179 +1496,216 @@ function Employees() {
       )}
 
       {/* Permanent Delete Confirmation Modal (Employees) */}
-      {deleteTargetEmployee && (
-        <div className="admin-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
-          <div className="admin-modal-container admin-delete-modal-container" style={{ maxWidth: '580px', maxHeight: '85vh' }}>
-            <div className="admin-modal-header" style={{ borderBottom: '2px solid #ef4444', flexShrink: 0 }}>
-              <div className="wizard-title-block">
-                <h2 id="delete-modal-title" className="admin-modal-title" style={{ color: '#991b1b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" style={{ width: '1.5rem', height: '1.5rem', flexShrink: 0 }}>
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                    <line x1="12" y1="9" x2="12" y2="13" />
-                    <line x1="12" y1="17" x2="12.01" y2="17" />
-                  </svg>
-                  Permanently Delete Employee
-                </h2>
-                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8125rem', color: '#64748b' }}>
-                  Irreversible destructive operation
-                </p>
-              </div>
-              <button
-                type="button"
-                className="admin-modal-close-btn"
-                onClick={() => {
-                  setDeleteTargetEmployee(null);
-                  setDeleteConfirmEmpId('');
-                  setDeleteConfirmChecked(false);
-                  setDeleteError('');
-                }}
-                aria-label="Close modal"
-                disabled={isDeleting}
-              >
-                &times;
-              </button>
-            </div>
+      {/* Permanent Delete Confirmation Modal (Employees) */}
+      {deleteTargetEmployee && (() => {
+        const targetEmpId = String(
+          deleteTargetEmployee.employee_id ||
+          deleteTargetEmployee.employeeId ||
+          deleteTargetEmployee.id ||
+          ''
+        ).trim();
+        const normalizedTargetEmpId = targetEmpId.toUpperCase();
+        const typedConfirmEmpId = (deleteConfirmEmpId || '').trim();
+        const normalizedTypedEmpId = typedConfirmEmpId.toUpperCase();
+        const isEmpIdMatched = Boolean(normalizedTargetEmpId && normalizedTypedEmpId === normalizedTargetEmpId);
+        const isDeleteEnabled = Boolean(isEmpIdMatched && deleteConfirmChecked && !isDeleting);
 
-            <div className="admin-modal-body-scrollable">
-              {deleteError && (
-                <div
-                  role="alert"
+        return (
+          <div className="admin-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+            <div className="admin-modal-container admin-delete-modal-container" style={{ maxWidth: '580px', maxHeight: '85vh' }}>
+              <div className="admin-modal-header" style={{ borderBottom: '2px solid #ef4444', flexShrink: 0 }}>
+                <div className="wizard-title-block">
+                  <h2 id="delete-modal-title" className="admin-modal-title" style={{ color: '#991b1b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" style={{ width: '1.5rem', height: '1.5rem', flexShrink: 0 }}>
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                      <line x1="12" y1="9" x2="12" y2="13" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    Permanently Delete Employee
+                  </h2>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8125rem', color: '#64748b' }}>
+                    Irreversible destructive operation
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="admin-modal-close-btn"
+                  onClick={() => {
+                    setDeleteTargetEmployee(null);
+                    setDeleteConfirmEmpId('');
+                    setDeleteConfirmChecked(false);
+                    setDeleteError('');
+                  }}
+                  aria-label="Close modal"
+                  disabled={isDeleting}
+                >
+                  &times;
+                </button>
+              </div>
+
+              <div className="admin-modal-body-scrollable">
+                {deleteError && (
+                  <div
+                    role="alert"
+                    style={{
+                      padding: '0.75rem 1rem',
+                      marginBottom: '1rem',
+                      backgroundColor: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      borderRadius: '0.375rem',
+                      color: '#991b1b',
+                      fontSize: '0.875rem',
+                    }}
+                  >
+                    {deleteError}
+                  </div>
+                )}
+
+                <div style={{ backgroundColor: '#f8fafc', padding: '0.875rem 1rem', borderRadius: '0.375rem', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
+                    <span style={{ fontSize: '0.8125rem', color: '#64748b', fontWeight: 500 }}>Employee ID:</span>
+                    <span style={{ fontSize: '0.875rem', color: '#0f172a', fontWeight: 700, fontFamily: 'monospace' }}>
+                      {targetEmpId || '—'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.8125rem', color: '#64748b', fontWeight: 500 }}>Employee Name:</span>
+                    <span style={{ fontSize: '0.875rem', color: '#0f172a', fontWeight: 600 }}>
+                      {deleteTargetEmployee.first_name} {deleteTargetEmployee.last_name || ''}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '0.375rem', padding: '1rem', color: '#991b1b', fontSize: '0.8125rem', lineHeight: '1.5', marginBottom: '1.25rem' }}>
+                  <p style={{ fontWeight: 700, margin: '0 0 0.5rem 0', textTransform: 'uppercase' }}>WARNING:</p>
+                  <p style={{ margin: '0 0 0.5rem 0' }}>
+                    This action permanently removes this employee's account and employee-linked data.
+                  </p>
+                  <p style={{ margin: '0 0 0.25rem 0' }}>It may remove:</p>
+                  <ul style={{ margin: '0 0 0.5rem 0', paddingLeft: '1.25rem' }}>
+                    <li>Employee profile</li>
+                    <li>Login account</li>
+                    <li>PF details</li>
+                    <li>Payroll profile</li>
+                    <li>Payroll history</li>
+                    <li>Attendance</li>
+                    <li>Leave requests</li>
+                    <li>Leave balances</li>
+                    <li>Documents &amp; private storage files</li>
+                    <li>Offboarding records</li>
+                    <li>F&amp;F records</li>
+                  </ul>
+                  <p style={{ margin: 0, fontWeight: 700 }}>This action cannot be undone.</p>
+                </div>
+
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label htmlFor="deleteConfirmEmpIdInput" style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.375rem' }}>
+                    To confirm, type the Employee ID:
+                  </label>
+                  <input
+                    type="text"
+                    id="deleteConfirmEmpIdInput"
+                    className="admin-field-input"
+                    placeholder={`Enter ${targetEmpId || 'Employee ID'}`}
+                    value={deleteConfirmEmpId}
+                    onChange={(e) => {
+                      setDeleteConfirmEmpId(e.target.value);
+                      setDeleteError('');
+                    }}
+                    disabled={isDeleting}
+                    autoComplete="off"
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      borderColor: typedConfirmEmpId
+                        ? isEmpIdMatched
+                          ? '#16a34a'
+                          : '#dc2626'
+                        : '#cbd5e1',
+                    }}
+                  />
+                  {typedConfirmEmpId ? (
+                    <div
+                      id="delete-empid-feedback"
+                      role={isEmpIdMatched ? 'status' : 'alert'}
+                      style={{
+                        marginTop: '0.375rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        color: isEmpIdMatched ? '#16a34a' : '#dc2626',
+                      }}
+                    >
+                      {isEmpIdMatched
+                        ? `✓ Employee ID matches target employee (${targetEmpId})`
+                        : `✗ Employee ID does not match. Expected: ${targetEmpId}`}
+                    </div>
+                  ) : (
+                    <small style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                      Type the exact Employee ID (<strong>{targetEmpId}</strong>) to confirm.
+                    </small>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.625rem' }}>
+                  <input
+                    type="checkbox"
+                    id="deleteConfirmCheck"
+                    checked={deleteConfirmChecked}
+                    onChange={(e) => {
+                      setDeleteConfirmChecked(e.target.checked);
+                      setDeleteError('');
+                    }}
+                    disabled={isDeleting}
+                    style={{ marginTop: '0.2rem', width: '1rem', height: '1rem', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="deleteConfirmCheck" style={{ fontSize: '0.8125rem', color: '#334155', fontWeight: 500, cursor: 'pointer' }}>
+                    I understand that this action permanently deletes the employee's data.
+                  </label>
+                </div>
+              </div>
+
+              <div className="admin-modal-footer" style={{ flexShrink: 0 }}>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary"
+                  onClick={() => {
+                    setDeleteTargetEmployee(null);
+                    setDeleteConfirmEmpId('');
+                    setDeleteConfirmChecked(false);
+                    setDeleteError('');
+                  }}
+                  disabled={isDeleting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="admin-btn"
+                  onClick={handleExecutePermanentDelete}
+                  disabled={!isDeleteEnabled}
+                  title={
+                    !isEmpIdMatched
+                      ? `Type matching Employee ID (${targetEmpId})`
+                      : !deleteConfirmChecked
+                      ? 'Check the confirmation checkbox to authorize permanent deletion'
+                      : 'Permanently delete this employee'
+                  }
                   style={{
-                    padding: '0.75rem 1rem',
-                    marginBottom: '1rem',
-                    backgroundColor: '#fef2f2',
-                    border: '1px solid #fecaca',
-                    borderRadius: '0.375rem',
-                    color: '#991b1b',
-                    fontSize: '0.875rem',
+                    backgroundColor: '#dc2626',
+                    borderColor: '#dc2626',
+                    color: '#ffffff',
+                    fontWeight: 600,
+                    opacity: isDeleteEnabled ? 1 : 0.5,
+                    cursor: isDeleteEnabled ? 'pointer' : 'not-allowed',
                   }}
                 >
-                  {deleteError}
-                </div>
-              )}
-
-              <div style={{ backgroundColor: '#f8fafc', padding: '0.875rem 1rem', borderRadius: '0.375rem', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
-                  <span style={{ fontSize: '0.8125rem', color: '#64748b', fontWeight: 500 }}>Employee ID:</span>
-                  <span style={{ fontSize: '0.875rem', color: '#0f172a', fontWeight: 700, fontFamily: 'monospace' }}>
-                    {deleteTargetEmployee.employee_id}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '0.8125rem', color: '#64748b', fontWeight: 500 }}>Employee Name:</span>
-                  <span style={{ fontSize: '0.875rem', color: '#0f172a', fontWeight: 600 }}>
-                    {deleteTargetEmployee.first_name} {deleteTargetEmployee.last_name || ''}
-                  </span>
-                </div>
+                  {isDeleting ? 'Deleting Permanently...' : 'Permanently Delete Employee'}
+                </button>
               </div>
-
-              <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '0.375rem', padding: '1rem', color: '#991b1b', fontSize: '0.8125rem', lineHeight: '1.5', marginBottom: '1.25rem' }}>
-                <p style={{ fontWeight: 700, margin: '0 0 0.5rem 0', textTransform: 'uppercase' }}>WARNING:</p>
-                <p style={{ margin: '0 0 0.5rem 0' }}>
-                  This action permanently removes this employee's account and employee-linked data.
-                </p>
-                <p style={{ margin: '0 0 0.25rem 0' }}>It may remove:</p>
-                <ul style={{ margin: '0 0 0.5rem 0', paddingLeft: '1.25rem' }}>
-                  <li>Employee profile</li>
-                  <li>Login account</li>
-                  <li>PF details</li>
-                  <li>Payroll profile</li>
-                  <li>Payroll history</li>
-                  <li>Attendance</li>
-                  <li>Leave requests</li>
-                  <li>Leave balances</li>
-                  <li>Documents &amp; private storage files</li>
-                  <li>Offboarding records</li>
-                  <li>F&amp;F records</li>
-                </ul>
-                <p style={{ margin: 0, fontWeight: 700 }}>This action cannot be undone.</p>
-              </div>
-
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label htmlFor="deleteConfirmEmpIdInput" style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.375rem' }}>
-                  To confirm, type the Employee ID:
-                </label>
-                <input
-                  type="text"
-                  id="deleteConfirmEmpIdInput"
-                  className="admin-field-input"
-                  placeholder="Enter employee ID"
-                  value={deleteConfirmEmpId}
-                  onChange={(e) => {
-                    setDeleteConfirmEmpId(e.target.value);
-                    setDeleteError('');
-                  }}
-                  disabled={isDeleting}
-                  style={{ width: '100%', boxSizing: 'border-box' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.625rem' }}>
-                <input
-                  type="checkbox"
-                  id="deleteConfirmCheck"
-                  checked={deleteConfirmChecked}
-                  onChange={(e) => {
-                    setDeleteConfirmChecked(e.target.checked);
-                    setDeleteError('');
-                  }}
-                  disabled={isDeleting}
-                  style={{ marginTop: '0.2rem', width: '1rem', height: '1rem', cursor: 'pointer' }}
-                />
-                <label htmlFor="deleteConfirmCheck" style={{ fontSize: '0.8125rem', color: '#334155', fontWeight: 500, cursor: 'pointer' }}>
-                  I understand that this action permanently deletes the employee's data.
-                </label>
-              </div>
-            </div>
-
-            <div className="admin-modal-footer" style={{ flexShrink: 0 }}>
-              <button
-                type="button"
-                className="admin-btn admin-btn-secondary"
-                onClick={() => {
-                  setDeleteTargetEmployee(null);
-                  setDeleteConfirmEmpId('');
-                  setDeleteConfirmChecked(false);
-                  setDeleteError('');
-                }}
-                disabled={isDeleting}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="admin-btn"
-                onClick={handleExecutePermanentDelete}
-                disabled={
-                  isDeleting ||
-                  deleteConfirmEmpId.trim().toUpperCase() !== deleteTargetEmployee.employee_id.toUpperCase() ||
-                  !deleteConfirmChecked
-                }
-                style={{
-                  backgroundColor: '#dc2626',
-                  borderColor: '#dc2626',
-                  color: '#ffffff',
-                  fontWeight: 600,
-                  opacity:
-                    isDeleting ||
-                    deleteConfirmEmpId.trim().toUpperCase() !== deleteTargetEmployee.employee_id.toUpperCase() ||
-                    !deleteConfirmChecked
-                      ? 0.5
-                      : 1,
-                  cursor:
-                    isDeleting ||
-                    deleteConfirmEmpId.trim().toUpperCase() !== deleteTargetEmployee.employee_id.toUpperCase() ||
-                    !deleteConfirmChecked
-                      ? 'not-allowed'
-                      : 'pointer',
-                }}
-              >
-                {isDeleting ? 'Deleting Permanently...' : 'Permanently Delete Employee'}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Permanent Delete Admin Confirmation Modal */}
       {deleteTargetAdmin && (() => {

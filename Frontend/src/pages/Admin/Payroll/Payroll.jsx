@@ -379,6 +379,22 @@ function Payroll({ defaultTab }) {
     }
   };
 
+  // Preview payslip layout (verifies Rupee symbol, stamp, and signatory layout)
+  const handlePreviewPayslipPdf = async () => {
+    try {
+      showToast('Generating payslip preview...');
+      const empId = selectedPayslip?.employeeId || selectedPayslip?.employee_id;
+      await api.admin.previewPayslipPdf({
+        employeeId: empId,
+        month: selectedMonth,
+        year: selectedYear,
+      });
+      showToast('Payslip preview downloaded.');
+    } catch (err) {
+      showToast(err?.message || 'Failed to generate payslip preview.');
+    }
+  };
+
   // Download Excel Template from backend API
   const handleDownloadTemplate = async () => {
     try {
@@ -451,6 +467,23 @@ function Payroll({ defaultTab }) {
 
   const handleConfirmImport = async () => {
     if (!importPreviewData?.importId) return;
+
+    if (importPreviewData.summary.invalidRows > 0 || importPreviewData.summary.duplicateRows > 0) {
+      setImportErrorMessage('Cannot import batch: all rows must be valid before confirming.');
+      return;
+    }
+
+    const confirmText = `Confirm Payroll Import & Payslip Generation?
+• Mode: ${importMode === 'UPDATE_EXISTING' ? 'Update Existing' : 'Create Only'}
+• Valid Employees: ${importPreviewData.summary.validRows}
+• Total Net Salary: ${formatINR(importPreviewData.summary.totalNetSalary)}
+• Period: ${importPreviewData.summary.month || selectedMonth}/${importPreviewData.summary.year || selectedYear}
+
+This operation will commit payroll records and generate official PDF payslips in secure document storage.`;
+
+    const confirmed = window.confirm(confirmText);
+    if (!confirmed) return;
+
     setIsConfirmingImport(true);
     setImportErrorMessage('');
     try {
@@ -498,6 +531,64 @@ function Payroll({ defaultTab }) {
       }
     } catch (err) {
       showToast(err.message || 'Failed to load employee payslip.');
+    }
+  };
+
+  // Retry Failed Payslips Action
+  const [isRetryingPayslips, setIsRetryingPayslips] = useState(false);
+  const handleRetryFailedPayslips = async () => {
+    if (payrollRecords.length === 0) {
+      showToast('No payroll records found for the selected period.');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Retry generating payslips for employees with failed or missing documents in ${selectedMonth} ${selectedYear}?`
+    );
+    if (!confirmed) return;
+
+    setIsRetryingPayslips(true);
+    try {
+      showToast(`Retrying payslip generation for ${selectedMonth} ${selectedYear}...`);
+      const res = await api.admin.retryFailedPayslips({
+        month: selectedMonth,
+        year: selectedYear,
+      });
+      if (res && res.success) {
+        showToast(res.message || 'Retry payslip generation completed successfully.');
+        await fetchPayrollData();
+      } else {
+        showToast(res?.message || 'Failed to retry payslip generation.');
+      }
+    } catch (err) {
+      showToast(err?.message || 'Error retrying payslip generation.');
+    } finally {
+      setIsRetryingPayslips(false);
+    }
+  };
+
+  // Download Payroll Processing Report
+  const [isDownloadingReport, setIsDownloadingReport] = useState(false);
+  const handleDownloadReport = async () => {
+    setIsDownloadingReport(true);
+    try {
+      showToast(`Generating ${selectedMonth} ${selectedYear} payroll processing report...`);
+      const blob = await api.admin.downloadPayrollReport({
+        month: selectedMonth,
+        year: selectedYear,
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Payroll_Report_${selectedMonth}_${selectedYear}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      showToast(`Downloaded payroll report for ${selectedMonth} ${selectedYear}.`);
+    } catch (err) {
+      showToast(err?.message || 'Failed to download payroll processing report.');
+    } finally {
+      setIsDownloadingReport(false);
     }
   };
 
@@ -619,6 +710,36 @@ function Payroll({ defaultTab }) {
                 <polyline points="12 6 12 12 16 14" />
               </svg>
               <span>Payroll History</span>
+            </button>
+
+            <button
+              type="button"
+              className="admin-btn-secondary"
+              onClick={handleDownloadReport}
+              disabled={isDownloadingReport}
+              aria-label="Download Processing Report"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
+              <span>{isDownloadingReport ? 'Downloading...' : 'Download Report'}</span>
+            </button>
+
+            <button
+              type="button"
+              className="admin-btn-secondary"
+              onClick={handleRetryFailedPayslips}
+              disabled={isRetryingPayslips || payrollRecords.length === 0}
+              aria-label="Retry Failed Payslips"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+              <span>{isRetryingPayslips ? 'Retrying...' : 'Retry Failed'}</span>
             </button>
           </div>
         </div>
@@ -1072,20 +1193,30 @@ function Payroll({ defaultTab }) {
                     <span>{isProcessing ? 'Processing...' : 'Process Payroll'}</span>
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    className="admin-btn-primary admin-btn-success"
-                    disabled={isGeneratingPayslips}
-                    onClick={handleGenerateAllPayslips}
-                  >
-                    {isGeneratingPayslips ? (
-                      <span>Generating Payslips...</span>
-                    ) : payslipsGenerated ? (
-                      <span>Generate All Payslips</span>
-                    ) : (
-                      <span>Generate All Payslips</span>
-                    )}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="admin-btn-secondary"
+                      onClick={handlePreviewPayslipPdf}
+                      title="Preview payslip layout, currency symbol, and signature/stamp positioning"
+                    >
+                      <span>Preview Payslip</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-btn-primary admin-btn-success"
+                      disabled={isGeneratingPayslips}
+                      onClick={handleGenerateAllPayslips}
+                    >
+                      {isGeneratingPayslips ? (
+                        <span>Generating Payslips...</span>
+                      ) : payslipsGenerated ? (
+                        <span>Generate All Payslips</span>
+                      ) : (
+                        <span>Generate All Payslips</span>
+                      )}
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -1697,11 +1828,11 @@ function Payroll({ defaultTab }) {
                     <span className="stat-number">{importPreviewData.summary.totalRows}</span>
                   </div>
                   <div className="summary-stat-card border-green">
-                    <span className="stat-label">Valid Rows</span>
+                    <span className="stat-label">Valid Employees</span>
                     <span className="stat-number text-green">{importPreviewData.summary.validRows}</span>
                   </div>
                   <div className="summary-stat-card border-red">
-                    <span className="stat-label">Invalid Rows</span>
+                    <span className="stat-label">Invalid Employees</span>
                     <span className="stat-number text-red">{importPreviewData.summary.invalidRows}</span>
                   </div>
                   <div className="summary-stat-card border-amber">
@@ -1714,6 +1845,31 @@ function Payroll({ defaultTab }) {
                   </div>
                 </div>
 
+                {/* Server-Calculated Financial Totals */}
+                <div className="import-stats-grid" style={{ marginTop: '0.75rem' }}>
+                  <div className="summary-stat-card border-slate" style={{ background: '#f8fafc' }}>
+                    <span className="stat-label">Total Gross Salary</span>
+                    <span className="stat-number font-semibold" style={{ fontSize: '1.25rem', color: '#1e293b' }}>
+                      {formatINR(importPreviewData.summary.totalGrossSalary || 0)}
+                    </span>
+                    <span className="text-xs text-muted">Basic + HRA + Allowances</span>
+                  </div>
+                  <div className="summary-stat-card border-red" style={{ background: '#fef2f2' }}>
+                    <span className="stat-label">Total Deductions</span>
+                    <span className="stat-number font-semibold text-red" style={{ fontSize: '1.25rem' }}>
+                      -{formatINR(importPreviewData.summary.totalDeductions || 0)}
+                    </span>
+                    <span className="text-xs text-muted">PF + PT + Other Deductions</span>
+                  </div>
+                  <div className="summary-stat-card border-green" style={{ background: '#f0fdf4' }}>
+                    <span className="stat-label">Total Net Salary</span>
+                    <span className="stat-number font-bold text-green" style={{ fontSize: '1.25rem' }}>
+                      {formatINR(importPreviewData.summary.totalNetSalary || 0)}
+                    </span>
+                    <span className="text-xs text-muted">Gross - Total Deductions</span>
+                  </div>
+                </div>
+
                 {/* Validation Errors Box if any */}
                 {(importPreviewData.summary.invalidRows > 0 || importPreviewData.summary.duplicateRows > 0) && (
                   <div className="import-errors-box" role="alert">
@@ -1723,14 +1879,14 @@ function Payroll({ defaultTab }) {
                         <line x1="12" y1="8" x2="12" y2="12" />
                         <line x1="12" y1="16" x2="12.01" y2="16" />
                       </svg>
-                      <strong>Validation Errors Detected:</strong>
+                      <strong>Validation Errors Detected ({importPreviewData.summary.invalidRows} row(s)):</strong>
                     </div>
                     <ul className="errors-list">
                       {importPreviewData.rows
                         .filter((r) => r.status === 'INVALID' || (r.errors && r.errors.length > 0))
                         .map((r, idx) => (
                           <li key={idx}>
-                            <span className="font-semibold">Row {r.rowNumber} ({r.employee_id || 'Empty ID'}):</span>{' '}
+                            <span className="font-semibold">Row {r.rowNumber} ({r.employee_id || 'Missing ID'}):</span>{' '}
                             {r.errors.join('; ')}
                           </li>
                         ))}
@@ -1789,7 +1945,7 @@ function Payroll({ defaultTab }) {
                 </div>
 
                 {/* Rows Preview Table */}
-                <div className="import-table-container admin-table-container">
+                <div className="import-table-container admin-table-container" style={{ maxHeight: '360px', overflowY: 'auto' }}>
                   <table className="admin-table">
                     <thead>
                       <tr>
@@ -1797,8 +1953,15 @@ function Payroll({ defaultTab }) {
                         <th>Employee ID</th>
                         <th>Name</th>
                         <th>Period</th>
+                        <th>Days (W/P)</th>
+                        <th>Basic</th>
+                        <th>HRA</th>
+                        <th>Allowances</th>
                         <th>Gross</th>
-                        <th>Deductions</th>
+                        <th>PF</th>
+                        <th>PT</th>
+                        <th>Other Ded.</th>
+                        <th>Total Ded.</th>
                         <th>Net Salary</th>
                         <th>Status</th>
                       </tr>
@@ -1810,12 +1973,19 @@ function Payroll({ defaultTab }) {
                           <td className="font-mono font-semibold text-primary">{r.employee_id}</td>
                           <td className="font-medium text-dark">{r.employee_name || '-'}</td>
                           <td className="text-secondary text-sm">{r.month}/{r.year}</td>
-                          <td className="font-medium">{formatINR(r.gross_salary)}</td>
+                          <td className="text-sm">{r.working_days ?? '-'}/{r.payable_days ?? '-'}</td>
+                          <td className="text-sm">{formatINR(r.basic_salary)}</td>
+                          <td className="text-sm">{formatINR(r.hra)}</td>
+                          <td className="text-sm">{formatINR(r.allowances)}</td>
+                          <td className="font-medium text-dark">{formatINR(r.gross_salary)}</td>
+                          <td className="text-sm text-red">{formatINR(r.pf_employee)}</td>
+                          <td className="text-sm text-red">{formatINR(r.professional_tax)}</td>
+                          <td className="text-sm text-red">{formatINR(r.other_deductions)}</td>
                           <td className="font-medium text-red">-{formatINR(r.total_deductions)}</td>
                           <td className="font-bold text-green">{formatINR(r.net_salary)}</td>
                           <td>
                             {r.status === 'INVALID' ? (
-                              <span className="payroll-badge badge-error">
+                              <span className="payroll-badge badge-error" title={r.errors?.join('; ')}>
                                 <span className="badge-dot" aria-hidden="true" />
                                 Invalid
                               </span>

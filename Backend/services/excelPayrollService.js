@@ -1,6 +1,11 @@
 const ExcelJS = require('exceljs');
 const crypto = require('crypto');
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
 /**
  * Expected columns configuration.
  * Maps normalized header keys to standard column definitions.
@@ -83,9 +88,15 @@ function getCellValue(cell) {
   const val = cell.value;
   if (val === null || val === undefined) return '';
   if (typeof val === 'object') {
-    // If formula cell, take the evaluated result
+    // If formula cell, check evaluated result
     if ('result' in val) {
+      if (val.result !== null && typeof val.result === 'object' && 'error' in val.result) {
+        return ''; // Formula error cell like #VALUE!, #REF!, #DIV/0!
+      }
       return val.result ?? '';
+    }
+    if ('error' in val) {
+      return '';
     }
     // If rich text
     if ('richText' in val && Array.isArray(val.richText)) {
@@ -101,19 +112,75 @@ function getCellValue(cell) {
 
 /**
  * Parses numeric value safely, rejecting NaN, Infinity, and negative values.
+ * Automatically sanitizes currency formatting (₹, $, commas, whitespace).
  */
-function parseNonNegativeNumber(val, fieldName) {
+function parseNonNegativeNumber(val, fieldName, rowNumber) {
+  const prefix = rowNumber ? `Row ${rowNumber}: ` : '';
   if (val === '' || val === null || val === undefined) {
-    return { error: `${fieldName} is required.` };
+    return { error: `${prefix}${fieldName} is required.` };
   }
-  const num = Number(val);
+
+  let cleanVal = val;
+  if (typeof cleanVal === 'string') {
+    cleanVal = cleanVal.replace(/[₹$,\s]/g, '').trim();
+    if (cleanVal === '') {
+      return { error: `${prefix}${fieldName} is required.` };
+    }
+  }
+
+  const num = Number(cleanVal);
   if (isNaN(num) || !isFinite(num)) {
-    return { error: `${fieldName} must be a valid numeric value.` };
+    return { error: `${prefix}${fieldName} must be a valid numeric value.` };
   }
   if (num < 0) {
-    return { error: `${fieldName} cannot be negative.` };
+    return { error: `${prefix}${fieldName} cannot be negative.` };
   }
   return { value: Math.round(num * 100) / 100 };
+}
+
+/**
+ * Parses month value supporting numbers (1-12) or month names ('September', etc.).
+ */
+function parseMonthValue(rawMonth, rowNumber) {
+  const prefix = rowNumber ? `Row ${rowNumber}: ` : '';
+  if (rawMonth === '' || rawMonth === null || rawMonth === undefined) {
+    return { error: `${prefix}Month is required.` };
+  }
+
+  const str = String(rawMonth).trim();
+  const m = parseInt(str, 10);
+  if (!isNaN(m) && m >= 1 && m <= 12) {
+    return { value: m };
+  }
+
+  const idx = MONTH_NAMES.findIndex((name) => name.toLowerCase() === str.toLowerCase());
+  if (idx !== -1) {
+    return { value: idx + 1 };
+  }
+
+  const abbrIdx = MONTH_NAMES.findIndex((name) => name.toLowerCase().startsWith(str.toLowerCase().slice(0, 3)));
+  if (abbrIdx !== -1) {
+    return { value: abbrIdx + 1 };
+  }
+
+  return { error: `${prefix}Month must be an integer between 1 and 12.` };
+}
+
+/**
+ * Parses 4-digit calendar year value (2000 - 2100).
+ */
+function parseYearValue(rawYear, rowNumber) {
+  const prefix = rowNumber ? `Row ${rowNumber}: ` : '';
+  if (rawYear === '' || rawYear === null || rawYear === undefined) {
+    return { error: `${prefix}Year is required.` };
+  }
+
+  const y = parseInt(String(rawYear).trim(), 10);
+  if (isNaN(y) || y < 2000 || y > 2100) {
+    return { error: `${prefix}Year must be an integer between 2000 and 2100.` };
+  }
+
+  return { value: y };
 }
 
 /**
@@ -201,7 +268,7 @@ async function generateTemplateWorkbook() {
 
   const instructions = [
     { field: 'Employee ID', desc: 'Must match an existing ACTIVE employee in the portal (e.g. GP0001N). Cannot be empty.' },
-    { field: 'Month', desc: 'Numeric month number between 1 (January) and 12 (December).' },
+    { field: 'Month', desc: 'Numeric month number between 1 (January) and 12 (December) or month name.' },
     { field: 'Year', desc: '4-digit calendar year between 2000 and 2100 (e.g. 2026).' },
     { field: 'Working Days', desc: 'Total standard working days in the month (e.g. 26). Must be >= 0.' },
     { field: 'Payable Days', desc: 'Days payable for this employee. Cannot exceed Working Days (Payable Days <= Working Days).' },
@@ -218,6 +285,145 @@ async function generateTemplateWorkbook() {
 
   instructions.forEach((i) => instrSheet.addRow(i));
   instrSheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+  return workbook;
+}
+
+/**
+ * Generates an official, downloadable processing / error report in Excel (.xlsx) format.
+ *
+ * @param {Object} reportData
+ * @param {string} reportData.batchNumber
+ * @param {number} reportData.month
+ * @param {number} reportData.year
+ * @param {string} reportData.status
+ * @param {string} [reportData.adminName]
+ * @param {Object} reportData.summary
+ * @param {Array<Object>} reportData.rows
+ * @returns {Promise<ExcelJS.Workbook>}
+ */
+async function generateProcessingReportWorkbook(reportData) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'GaintPro Software Technologies';
+  workbook.lastModifiedBy = 'GaintPro HRM Payroll System';
+  workbook.created = new Date();
+
+  const monthName = MONTH_NAMES[(reportData.month || 1) - 1] || reportData.month;
+  const periodLabel = `${monthName} ${reportData.year || ''}`;
+
+  // 1. Summary Sheet
+  const summarySheet = workbook.addWorksheet('Batch_Summary');
+  summarySheet.views = [{ showGridLines: true }];
+
+  summarySheet.columns = [
+    { width: 28 },
+    { width: 36 },
+  ];
+
+  const addSummaryRow = (label, value, isBold = false) => {
+    const row = summarySheet.addRow([label, value]);
+    if (isBold) {
+      row.font = { bold: true };
+    }
+  };
+
+  summarySheet.mergeCells('A1:B1');
+  const titleCell = summarySheet.getCell('A1');
+  titleCell.value = 'GAINTPRO SOFTWARE TECHNOLOGIES — PAYROLL PROCESSING REPORT';
+  titleCell.font = { name: 'Segoe UI', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  summarySheet.getRow(1).height = 32;
+
+  summarySheet.addRow([]);
+  addSummaryRow('Batch Number', reportData.batchNumber || 'N/A', true);
+  addSummaryRow('Payroll Period', periodLabel, true);
+  addSummaryRow('Batch Status', reportData.status || 'Processed', true);
+  addSummaryRow('Generated At', new Date().toISOString());
+  addSummaryRow('Admin / Processed By', reportData.adminName || 'Authorized Administrator');
+  summarySheet.addRow([]);
+
+  const summary = reportData.summary || {};
+  addSummaryRow('Total Records in Batch', summary.totalRows || summary.totalRecords || 0, true);
+  addSummaryRow('Valid Records', summary.validRows || summary.validRecords || 0);
+  addSummaryRow('Invalid Records', summary.invalidRows || summary.invalidRecords || 0);
+  addSummaryRow('Successfully Processed Records', summary.processedRecords || summary.createdCount || 0);
+  addSummaryRow('Payslips Generated', summary.payslipsGenerated || 0);
+  addSummaryRow('Payslips Failed', summary.payslipsFailed || 0);
+  summarySheet.addRow([]);
+
+  addSummaryRow('Total Gross Salary (INR)', `₹${Number(summary.totalGrossSalary || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, true);
+  addSummaryRow('Total Deductions (INR)', `₹${Number(summary.totalDeductions || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, true);
+  addSummaryRow('Total Net Salary Payable (INR)', `₹${Number(summary.totalNetSalary || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, true);
+
+  // 2. Employee Details Sheet
+  const detailsSheet = workbook.addWorksheet('Employee_Details', {
+    views: [{ state: 'frozen', ySplit: 1, showGridLines: true }],
+  });
+
+  detailsSheet.columns = [
+    { header: 'Row #', key: 'rowNumber', width: 10 },
+    { header: 'Employee ID', key: 'employee_id', width: 16 },
+    { header: 'Employee Name', key: 'employee_name', width: 24 },
+    { header: 'Department', key: 'department', width: 18 },
+    { header: 'Month', key: 'month', width: 10 },
+    { header: 'Year', key: 'year', width: 10 },
+    { header: 'Working Days', key: 'working_days', width: 14 },
+    { header: 'Payable Days', key: 'payable_days', width: 14 },
+    { header: 'Basic Salary', key: 'basic_salary', width: 15 },
+    { header: 'HRA', key: 'hra', width: 14 },
+    { header: 'Allowances', key: 'allowances', width: 15 },
+    { header: 'Gross Salary', key: 'gross_salary', width: 16 },
+    { header: 'PF Employee', key: 'pf_employee', width: 15 },
+    { header: 'Professional Tax', key: 'professional_tax', width: 16 },
+    { header: 'Other Deductions', key: 'other_deductions', width: 16 },
+    { header: 'Total Deductions', key: 'total_deductions', width: 16 },
+    { header: 'Net Salary', key: 'net_salary', width: 16 },
+    { header: 'Validation Status', key: 'status', width: 18 },
+    { header: 'Payslip Status', key: 'payslip_status', width: 18 },
+    { header: 'Validation Errors / Remarks', key: 'errors', width: 40 },
+  ];
+
+  const headerRow = detailsSheet.getRow(1);
+  headerRow.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+  headerRow.height = 24;
+
+  const rows = reportData.rows || [];
+  rows.forEach((r, idx) => {
+    const errorStr = Array.isArray(r.errors) ? r.errors.join(' | ') : (r.errors || r.issue || '-');
+    const dRow = detailsSheet.addRow({
+      rowNumber: r.rowNumber || idx + 2,
+      employee_id: r.employee_id || r.employeeId,
+      employee_name: r.employee_name || r.name || '-',
+      department: r.department || '-',
+      month: r.month,
+      year: r.year,
+      working_days: r.working_days,
+      payable_days: r.payable_days,
+      basic_salary: r.basic_salary,
+      hra: r.hra,
+      allowances: r.allowances,
+      gross_salary: r.gross_salary,
+      pf_employee: r.pf_employee,
+      professional_tax: r.professional_tax,
+      other_deductions: r.other_deductions,
+      total_deductions: r.total_deductions,
+      net_salary: r.net_salary,
+      status: r.status,
+      payslip_status: r.payslip_status || (r.status === 'VALID' ? 'Generated' : 'Skipped'),
+      errors: errorStr,
+    });
+
+    if (r.status === 'INVALID' || r.status === 'Error') {
+      dRow.getCell('status').fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFEE2E2' },
+      };
+      dRow.getCell('status').font = { color: { argb: 'FFDC2626' }, bold: true };
+    }
+  });
 
   return workbook;
 }
@@ -319,80 +525,72 @@ async function parseAndValidateExcelBuffer(buffer, pool) {
 
     // Validate Employee ID
     if (!rawEmpId) {
-      rowErrors.push('Employee ID cannot be empty.');
+      rowErrors.push(`Row ${rowNumber}: Employee ID cannot be empty.`);
     } else if (rawEmpId.length > 50) {
-      rowErrors.push('Employee ID exceeds maximum length (50 characters).');
+      rowErrors.push(`Row ${rowNumber}: Employee ID exceeds maximum length (50 characters).`);
     }
 
     // Validate Month
     let monthNum = null;
-    if (rawMonth === '' || rawMonth === null || rawMonth === undefined) {
-      rowErrors.push('Month is required.');
+    const monthRes = parseMonthValue(rawMonth, rowNumber);
+    if (monthRes.error) {
+      rowErrors.push(monthRes.error);
     } else {
-      const m = parseInt(String(rawMonth).trim(), 10);
-      if (isNaN(m) || m < 1 || m > 12) {
-        rowErrors.push('Month must be an integer between 1 and 12.');
-      } else {
-        monthNum = m;
-      }
+      monthNum = monthRes.value;
     }
 
     // Validate Year
     let yearNum = null;
-    if (rawYear === '' || rawYear === null || rawYear === undefined) {
-      rowErrors.push('Year is required.');
+    const yearRes = parseYearValue(rawYear, rowNumber);
+    if (yearRes.error) {
+      rowErrors.push(yearRes.error);
     } else {
-      const y = parseInt(String(rawYear).trim(), 10);
-      if (isNaN(y) || y < 2000 || y > 2100) {
-        rowErrors.push('Year must be an integer between 2000 and 2100.');
-      } else {
-        yearNum = y;
-      }
+      yearNum = yearRes.value;
     }
 
     // Validate Working Days
-    const wdRes = parseNonNegativeNumber(rawWorkingDays, 'Working Days');
+    const wdRes = parseNonNegativeNumber(rawWorkingDays, 'Working Days', rowNumber);
     if (wdRes.error) rowErrors.push(wdRes.error);
     const workingDays = wdRes.value ?? 0;
 
     // Validate Payable Days
-    const pdRes = parseNonNegativeNumber(rawPayableDays, 'Payable Days');
+    const pdRes = parseNonNegativeNumber(rawPayableDays, 'Payable Days', rowNumber);
     if (pdRes.error) rowErrors.push(pdRes.error);
     const payableDays = pdRes.value ?? 0;
 
     if (!wdRes.error && !pdRes.error) {
       if (payableDays > workingDays) {
-        rowErrors.push(`Payable Days (${payableDays}) cannot exceed Working Days (${workingDays}).`);
+        rowErrors.push(`Row ${rowNumber}: Payable Days (${payableDays}) cannot exceed Working Days (${workingDays}).`);
       }
     }
 
     // Validate Basic Salary
-    const basicRes = parseNonNegativeNumber(rawBasic, 'Basic Salary');
+    const basicRes = parseNonNegativeNumber(rawBasic, 'Basic Salary', rowNumber);
     if (basicRes.error) rowErrors.push(basicRes.error);
     const basicSalary = basicRes.value ?? 0;
 
     // Validate HRA
-    const hraRes = parseNonNegativeNumber(rawHra, 'HRA');
+    const hraRes = parseNonNegativeNumber(rawHra, 'HRA', rowNumber);
     if (hraRes.error) rowErrors.push(hraRes.error);
     const hra = hraRes.value ?? 0;
 
     // Validate Allowances
-    const allowRes = parseNonNegativeNumber(rawAllowances, 'Allowances');
+    const allowRes = parseNonNegativeNumber(rawAllowances, 'Allowances', rowNumber);
     if (allowRes.error) rowErrors.push(allowRes.error);
     const allowances = allowRes.value ?? 0;
 
     // Validate PF
-    const pfRes = parseNonNegativeNumber(rawPf, 'PF Employee');
+    const pfRes = parseNonNegativeNumber(rawPf, 'PF Employee', rowNumber);
     if (pfRes.error) rowErrors.push(pfRes.error);
     const pfEmployee = pfRes.value ?? 0;
 
     // Validate PT
-    const ptRes = parseNonNegativeNumber(rawPt, 'Professional Tax');
+    const ptRes = parseNonNegativeNumber(rawPt, 'Professional Tax', rowNumber);
     if (ptRes.error) rowErrors.push(ptRes.error);
     const professionalTax = ptRes.value ?? 0;
 
     // Validate Other Deductions
-    const otherRes = parseNonNegativeNumber(rawOther, 'Other Deductions');
+    const otherRes = parseNonNegativeNumber(rawOther, 'Other Deductions', rowNumber);
     if (otherRes.error) rowErrors.push(otherRes.error);
     const otherDeductions = otherRes.value ?? 0;
 
@@ -402,7 +600,7 @@ async function parseAndValidateExcelBuffer(buffer, pool) {
       const batchKey = `${rawEmpId.toUpperCase()}_${monthNum}_${yearNum}`;
       if (seenInBatch.has(batchKey)) {
         isDuplicateInBatch = true;
-        rowErrors.push(`Duplicate row in Excel for employee ${rawEmpId} in period ${monthNum}/${yearNum}.`);
+        rowErrors.push(`Row ${rowNumber}: Duplicate row in Excel for employee ${rawEmpId} in period ${monthNum}/${yearNum}.`);
       } else {
         seenInBatch.add(batchKey);
       }
@@ -447,7 +645,7 @@ async function parseAndValidateExcelBuffer(buffer, pool) {
     throw error;
   }
 
-  // 4. Batch query PostgreSQL for employee existence
+  // 4. Batch query PostgreSQL for employee existence and status
   const empIdsArray = Array.from(rawEmployeeIds);
   const empRes = await pool.query(
     `SELECT employee_id, first_name, last_name, department, designation, status 
@@ -462,7 +660,6 @@ async function parseAndValidateExcelBuffer(buffer, pool) {
   });
 
   // 5. Batch query PostgreSQL for existing payroll records in this period
-  // Query all existing records for the employees and years present in the file
   const yearsInBatch = Array.from(new Set(parsedRows.map((r) => r.year).filter(Boolean)));
   const existingPayrollMap = new Set();
 
@@ -486,15 +683,25 @@ async function parseAndValidateExcelBuffer(buffer, pool) {
   let existingPayrollCount = 0;
   let duplicateCount = 0;
 
+  let totalGrossSalary = 0;
+  let totalDeductions = 0;
+  let totalNetSalary = 0;
+
   parsedRows.forEach((row) => {
     const empRecord = employeeMap.get(row.employee_id.toUpperCase());
 
     if (!empRecord) {
       row.status = 'INVALID';
-      row.errors.push(`Employee ID '${row.employee_id}' does not exist in the HRM database.`);
+      row.errors.push(`Row ${row.rowNumber}: Employee ID '${row.employee_id}' does not exist in the HRM database.`);
     } else {
       row.employee_name = `${empRecord.first_name} ${empRecord.last_name}`.trim();
       row.department = empRecord.department;
+      row.designation = empRecord.designation;
+
+      if (empRecord.status && empRecord.status !== 'ACTIVE') {
+        row.errors.push(`Row ${row.rowNumber}: Employee '${row.employee_id}' is inactive (status: ${empRecord.status}).`);
+        row.status = 'INVALID';
+      }
     }
 
     if (row.isDuplicateInBatch) {
@@ -517,8 +724,15 @@ async function parseAndValidateExcelBuffer(buffer, pool) {
     } else {
       row.status = 'VALID';
       validRowsCount++;
+
+      totalGrossSalary += row.gross_salary;
+      totalDeductions += row.total_deductions;
+      totalNetSalary += row.net_salary;
     }
   });
+
+  const batchMonth = parsedRows.find((r) => r.month)?.month || null;
+  const batchYear = parsedRows.find((r) => r.year)?.year || null;
 
   const summary = {
     totalRows: parsedRows.length,
@@ -526,6 +740,11 @@ async function parseAndValidateExcelBuffer(buffer, pool) {
     invalidRows: invalidRowsCount,
     existingPayrollRows: existingPayrollCount,
     duplicateRows: duplicateCount,
+    totalGrossSalary: Math.round(totalGrossSalary * 100) / 100,
+    totalDeductions: Math.round(totalDeductions * 100) / 100,
+    totalNetSalary: Math.round(totalNetSalary * 100) / 100,
+    month: batchMonth,
+    year: batchYear,
   };
 
   const importId = saveImportSession({
@@ -542,8 +761,13 @@ async function parseAndValidateExcelBuffer(buffer, pool) {
 
 module.exports = {
   EXPECTED_COLUMNS,
+  MONTH_NAMES,
   generateTemplateWorkbook,
+  generateProcessingReportWorkbook,
   parseAndValidateExcelBuffer,
+  parseNonNegativeNumber,
+  parseMonthValue,
+  parseYearValue,
   saveImportSession,
   getImportSession,
   deleteImportSession,

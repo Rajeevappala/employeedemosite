@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../../../../services/api';
+import gaintproLogo from '../../../../assets/gaintpro-logo.png';
 import './OrganizationSettings.css';
 
 const DEFAULT_SETTINGS = {
@@ -505,15 +506,19 @@ function OrganizationSettings() {
 
             <div className="admin-org-settings-logo-container">
               <div className="admin-org-settings-logo-preview" aria-hidden="true">
-                GP
+                <img
+                  src={gaintproLogo}
+                  alt="GaintPro Software Technologies logo"
+                  className="admin-org-settings-logo-img"
+                />
               </div>
               <div className="admin-org-settings-logo-info">
-                <span className="admin-org-settings-logo-info-title">GaintPro System Brand Asset</span>
+                <span className="admin-org-settings-logo-info-title">GaintPro Official Brand Asset</span>
                 <span className="admin-org-settings-logo-info-desc">
-                  The portal currently renders the verified GaintPro vector identity asset. Custom corporate logo file uploads will be introduced in an upcoming asset-management release.
+                  Official GaintPro Software Technologies corporate logo used across portal headers and payslip PDFs.
                 </span>
                 <span className="admin-org-settings-logo-badge">
-                  Standard Vector Icon Active
+                  Official Brand Active
                 </span>
               </div>
             </div>

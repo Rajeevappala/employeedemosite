@@ -54,21 +54,14 @@ body:has(.login-page),
   text-align: center;
 }
 
-.login-logo-placeholder {
-  width: 48px;
-  height: 48px;
-  background-color: #2563eb;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
+.login-brand-logo {
+  height: 52px;
+  width: auto;
+  max-width: 60px;
+  object-fit: contain;
+  display: block;
+  border-radius: 8px;
   margin-bottom: 0.75rem;
-}
-
-.login-logo-icon {
-  width: 26px;
-  height: 26px;
 }
 
 .login-org-name {

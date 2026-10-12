@@ -94,22 +94,22 @@ body:has(.admin-layout),
   flex-shrink: 0;
 }
 
-.admin-navbar-logo-badge {
-  width: 34px;
-  height: 34px;
-  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
+.admin-navbar-brand-logo {
+  height: 44px;
+  width: auto;
+  max-width: 48px;
+  object-fit: contain;
+  display: block;
   flex-shrink: 0;
-  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+  border-radius: 6px;
+  transition: transform 0.15s ease;
 }
 
-.admin-navbar-logo-icon {
-  width: 18px;
-  height: 18px;
+@media (max-width: 640px) {
+  .admin-navbar-brand-logo {
+    height: 36px;
+    max-width: 40px;
+  }
 }
 
 .admin-navbar-brand-text {

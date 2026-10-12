@@ -1,7 +1,12 @@
 const path = require('path');
+const crypto = require('crypto');
 const pool = require('../config/database');
 const storageService = require('../services/storageService');
-const { generatePayslipPdf } = require('../services/payslipPdfService');
+const {
+  generatePayslipPdf,
+  checkAuthorizationAssets,
+  MissingPayslipAssetsError,
+} = require('../services/payslipPdfService');
 const { recordAuditLog } = require('../services/auditService');
 const excelPayrollService = require('../services/excelPayrollService');
 
@@ -1127,6 +1132,14 @@ const generateAdminPayslip = async (req, res, next) => {
         // ignore cleanup error
       }
     }
+    if (error instanceof MissingPayslipAssetsError || error.code === 'MISSING_AUTHORIZATION_ASSETS') {
+      return res.status(422).json({
+        success: false,
+        message: error.message,
+        error: 'MISSING_AUTHORIZATION_ASSETS',
+        missingAssets: error.missingDetails || [],
+      });
+    }
     next(error);
   }
 };
@@ -1167,79 +1180,120 @@ const generateAllAdminPayslips = async (req, res, next) => {
       });
     }
 
+    if (process.env.PAYSLIP_REQUIRE_ASSETS === 'true') {
+      const assetStatus = checkAuthorizationAssets();
+      if (!assetStatus.isComplete) {
+        return res.status(422).json({
+          success: false,
+          message: 'Batch payslip generation aborted: Authorized company signature or office stamp assets are missing or unreadable. Please configure required genuine PNG assets in Backend/assets/company/ before generating official payslips.',
+          error: 'MISSING_AUTHORIZATION_ASSETS',
+          missingAssets: assetStatus.missing,
+        });
+      }
+    }
+
     const results = [];
+    let generatedCount = 0;
+    let alreadyGeneratedCount = 0;
+    const failedEmployees = [];
+
     for (const record of recordsRes.rows) {
       const cleanEmpId = record.employee_id;
-      const employee = {
-        employee_id: cleanEmpId,
-        first_name: record.first_name,
-        last_name: record.last_name,
-        department: record.department,
-        designation: record.designation,
-      };
+      try {
+        const employee = {
+          employee_id: cleanEmpId,
+          first_name: record.first_name,
+          last_name: record.last_name,
+          department: record.department,
+          designation: record.designation,
+        };
 
-      // Check existing document
-      const existingDocRes = await pool.query(
-        `SELECT id, employee_id, document_type, file_name, storage_key, month, year
-         FROM public.documents
-         WHERE employee_id = $1 AND document_type = 'Payslip' AND month = $2 AND year = $3
-         LIMIT 1`,
-        [cleanEmpId, monthNum, yearNum]
-      );
+        // Check existing document
+        const existingDocRes = await pool.query(
+          `SELECT id, employee_id, document_type, file_name, storage_key, month, year
+           FROM public.documents
+           WHERE employee_id = $1 AND LOWER(document_type) = 'payslip' AND month = $2 AND year = $3
+           LIMIT 1`,
+          [cleanEmpId, monthNum, yearNum]
+        );
 
-      if (existingDocRes.rows.length > 0) {
-        const existingDoc = existingDocRes.rows[0];
-        const isPresent = await storageService.fileExists(existingDoc.storage_key);
-        if (isPresent) {
-          results.push({
-            document_id: existingDoc.id,
-            employee_id: cleanEmpId,
-            file_name: existingDoc.file_name,
-            status: 'Already Generated',
-          });
-          continue;
+        if (existingDocRes.rows.length > 0) {
+          const existingDoc = existingDocRes.rows[0];
+          const isPresent = await storageService.fileExists(existingDoc.storage_key);
+          if (isPresent) {
+            alreadyGeneratedCount++;
+            results.push({
+              document_id: existingDoc.id,
+              employee_id: cleanEmpId,
+              file_name: existingDoc.file_name,
+              status: 'Already Generated',
+            });
+            continue;
+          }
         }
+
+        // Generate & store
+        const pfRes = await pool.query(
+          `SELECT uan_number, pf_number FROM public.pf_details WHERE employee_id = $1`,
+          [cleanEmpId]
+        );
+        const pfDetails = pfRes.rows[0] || null;
+
+        const pdfBuffer = await generatePayslipPdf({ employee, payroll: record, pfDetails });
+        const monthName = getMonthName(monthNum);
+        const originalFileName = `Payslip_${cleanEmpId}_${monthName}_${yearNum}.pdf`;
+
+        const generatedStorageKey = storageService.generateStorageKey({
+          employeeId: cleanEmpId,
+          originalFilename: originalFileName,
+          prefix: 'documents',
+        });
+
+        await storageService.saveFile(pdfBuffer, generatedStorageKey);
+
+        const insertRes = await pool.query(
+          `INSERT INTO public.documents (
+             employee_id, document_type, file_name, storage_key, month, year, uploaded_by
+           ) VALUES ($1, 'Payslip', $2, $3, $4, $5, $6)
+           ON CONFLICT (employee_id, month, year) WHERE LOWER(document_type) = 'payslip'
+           DO UPDATE SET
+             file_name = EXCLUDED.file_name,
+             storage_key = EXCLUDED.storage_key,
+             uploaded_by = EXCLUDED.uploaded_by,
+             updated_at = NOW()
+           RETURNING id, employee_id, file_name, month, year`,
+          [cleanEmpId, originalFileName, generatedStorageKey, monthNum, yearNum, adminUserId]
+        );
+
+        generatedCount++;
+        results.push({
+          document_id: insertRes.rows[0].id,
+          employee_id: cleanEmpId,
+          file_name: insertRes.rows[0].file_name,
+          status: 'Generated',
+        });
+      } catch (indivErr) {
+        console.error(`Error generating payslip for ${cleanEmpId}:`, indivErr.message);
+        failedEmployees.push({
+          employee_id: cleanEmpId,
+          error: indivErr.message,
+        });
+        results.push({
+          employee_id: cleanEmpId,
+          status: 'Failed',
+          error: indivErr.message,
+        });
       }
-
-      // Generate & store
-      const pfRes = await pool.query(
-        `SELECT uan_number, pf_number FROM public.pf_details WHERE employee_id = $1`,
-        [cleanEmpId]
-      );
-      const pfDetails = pfRes.rows[0] || null;
-
-      const pdfBuffer = await generatePayslipPdf({ employee, payroll: record, pfDetails });
-      const monthName = getMonthName(monthNum);
-      const originalFileName = `Payslip_${cleanEmpId}_${monthName}_${yearNum}.pdf`;
-
-      const generatedStorageKey = storageService.generateStorageKey({
-        employeeId: cleanEmpId,
-        originalFilename: originalFileName,
-        prefix: 'documents',
-      });
-
-      await storageService.saveFile(pdfBuffer, generatedStorageKey);
-
-      const insertRes = await pool.query(
-        `INSERT INTO public.documents (
-           employee_id, document_type, file_name, storage_key, month, year, uploaded_by
-         ) VALUES ($1, 'Payslip', $2, $3, $4, $5, $6)
-         RETURNING id, employee_id, file_name, month, year`,
-        [cleanEmpId, originalFileName, generatedStorageKey, monthNum, yearNum, adminUserId]
-      );
-
-      results.push({
-        document_id: insertRes.rows[0].id,
-        employee_id: cleanEmpId,
-        file_name: insertRes.rows[0].file_name,
-        status: 'Generated',
-      });
     }
 
     return res.status(200).json({
       success: true,
-      message: `Successfully processed ${results.length} payslips.`,
+      message: `Processed ${results.length} payslips (${generatedCount} generated, ${alreadyGeneratedCount} already valid, ${failedEmployees.length} failed).`,
       count: results.length,
+      generatedCount,
+      alreadyGeneratedCount,
+      failedCount: failedEmployees.length,
+      failedEmployees,
       data: results,
     });
   } catch (error) {
@@ -1288,11 +1342,71 @@ const previewPayrollImport = async (req, res, next) => {
     }
 
     const preview = await excelPayrollService.parseAndValidateExcelBuffer(req.file.buffer, pool);
+    const adminUserId = req.user?.id;
+    const originalFileName = req.file.originalname || 'payroll_import.xlsx';
+
+    const hasErrors = preview.summary.invalidRows > 0 || preview.summary.duplicateRows > 0;
+    const batchStatus = hasErrors ? 'Validation Failed' : 'Ready for Confirmation';
+
+    const bYear = preview.summary.year || new Date().getFullYear();
+    const bMonth = preview.summary.month || (new Date().getMonth() + 1);
+    const batchNumber = `BATCH-${bYear}-${String(bMonth).padStart(2, '0')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+    let errorSummary = null;
+    if (hasErrors) {
+      const errorRows = preview.rows.filter((r) => r.errors && r.errors.length > 0);
+      errorSummary = JSON.stringify(
+        errorRows.slice(0, 20).map((r) => ({
+          row: r.rowNumber,
+          employeeId: r.employee_id,
+          errors: r.errors,
+        }))
+      );
+    }
+
+    // Persist batch into payroll_batches table
+    const batchInsert = await pool.query(
+      `INSERT INTO public.payroll_batches (
+        batch_number, month, year, status,
+        total_records, valid_records, invalid_records, processed_records,
+        payslips_generated, payslips_failed,
+        total_gross_salary, total_deductions, total_net_salary,
+        file_name, error_summary, created_by, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 0, 0, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+      RETURNING id, batch_number, status, created_at`,
+      [
+        batchNumber,
+        bMonth,
+        bYear,
+        batchStatus,
+        preview.summary.totalRows,
+        preview.summary.validRows,
+        preview.summary.invalidRows,
+        preview.summary.totalGrossSalary,
+        preview.summary.totalDeductions,
+        preview.summary.totalNetSalary,
+        originalFileName,
+        errorSummary,
+        adminUserId || null,
+      ]
+    );
+
+    const insertedBatch = batchInsert.rows[0];
+
+    // Associate batch with the active import session
+    const session = excelPayrollService.getImportSession(preview.importId);
+    if (session) {
+      session.batchId = insertedBatch.id;
+      session.batchNumber = insertedBatch.batch_number;
+      session.fileName = originalFileName;
+    }
 
     recordAuditLog({
       action: 'PAYROLL_EXCEL_PREVIEW',
       entityType: 'PAYROLL',
       metadata: {
+        batchId: insertedBatch.id,
+        batchNumber: insertedBatch.batch_number,
         totalRows: preview.summary.totalRows,
         validRows: preview.summary.validRows,
         invalidRows: preview.summary.invalidRows,
@@ -1304,8 +1418,15 @@ const previewPayrollImport = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Excel file validated successfully.',
-      data: preview,
+      message: hasErrors
+        ? `Excel file validated with ${preview.summary.invalidRows} invalid record(s).`
+        : 'Excel file validated successfully. Ready for confirmation.',
+      data: {
+        ...preview,
+        batchId: insertedBatch.id,
+        batchNumber: insertedBatch.batch_number,
+        batchStatus: insertedBatch.status,
+      },
     });
   } catch (error) {
     next(error);
@@ -1368,6 +1489,17 @@ const confirmPayrollImport = async (req, res, next) => {
     });
   }
 
+  const batchId = session.batchId || null;
+  const batchNumber = session.batchNumber || null;
+
+  // Mark batch as Processing
+  if (batchId) {
+    await pool.query(
+      "UPDATE public.payroll_batches SET status = 'Processing', updated_at = NOW() WHERE id = $1",
+      [batchId]
+    ).catch(() => {});
+  }
+
   const client = await pool.connect();
   const processedRecords = [];
   let createdCount = 0;
@@ -1381,25 +1513,27 @@ const confirmPayrollImport = async (req, res, next) => {
         const updateSql = `
           UPDATE public.payroll_records
           SET
-            working_days = $1,
-            payable_days = $2,
-            basic_salary = $3,
-            hra = $4,
-            allowances = $5,
-            gross_salary = $6,
-            pf_employee = $7,
-            professional_tax = $8,
-            other_deductions = $9,
-            total_deductions = $10,
-            net_salary = $11,
+            batch_id = $1,
+            working_days = $2,
+            payable_days = $3,
+            basic_salary = $4,
+            hra = $5,
+            allowances = $6,
+            gross_salary = $7,
+            pf_employee = $8,
+            professional_tax = $9,
+            other_deductions = $10,
+            total_deductions = $11,
+            net_salary = $12,
             status = 'Processed',
-            processed_by = $12,
+            processed_by = $13,
             processed_at = NOW(),
             updated_at = NOW()
-          WHERE employee_id = $13 AND month = $14 AND year = $15
+          WHERE employee_id = $14 AND month = $15 AND year = $16
           RETURNING *;
         `;
         const resUp = await client.query(updateSql, [
+          batchId,
           row.working_days,
           row.payable_days,
           row.basic_salary,
@@ -1421,6 +1555,7 @@ const confirmPayrollImport = async (req, res, next) => {
       } else {
         const insertSql = `
           INSERT INTO public.payroll_records (
+            batch_id,
             employee_id,
             month,
             year,
@@ -1439,10 +1574,29 @@ const confirmPayrollImport = async (req, res, next) => {
             processed_by,
             processed_at,
             updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'Processed', $15, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'Processed', $16, NOW(), NOW())
+          ON CONFLICT (employee_id, month, year)
+          DO UPDATE SET
+            batch_id = EXCLUDED.batch_id,
+            working_days = EXCLUDED.working_days,
+            payable_days = EXCLUDED.payable_days,
+            basic_salary = EXCLUDED.basic_salary,
+            hra = EXCLUDED.hra,
+            allowances = EXCLUDED.allowances,
+            gross_salary = EXCLUDED.gross_salary,
+            pf_employee = EXCLUDED.pf_employee,
+            professional_tax = EXCLUDED.professional_tax,
+            other_deductions = EXCLUDED.other_deductions,
+            total_deductions = EXCLUDED.total_deductions,
+            net_salary = EXCLUDED.net_salary,
+            status = 'Processed',
+            processed_by = EXCLUDED.processed_by,
+            processed_at = NOW(),
+            updated_at = NOW()
           RETURNING *;
         `;
         const resIn = await client.query(insertSql, [
+          batchId,
           row.employee_id,
           row.month,
           row.year,
@@ -1467,20 +1621,27 @@ const confirmPayrollImport = async (req, res, next) => {
     await client.query('COMMIT');
   } catch (txError) {
     await client.query('ROLLBACK').catch(() => {});
+    if (batchId) {
+      await pool.query(
+        "UPDATE public.payroll_batches SET status = 'Failed', error_summary = $1, updated_at = NOW() WHERE id = $2",
+        [txError.message, batchId]
+      ).catch(() => {});
+    }
     return next(txError);
   } finally {
     client.release();
   }
 
-  // Automatic Payslip Generation for all processed records (Idempotent)
+  // Automatic Payslip Generation for all processed records (Idempotent and isolated per employee)
   let payslipsGenerated = 0;
+  let payslipsFailed = 0;
   let alreadyGeneratedCount = 0;
 
   for (const record of processedRecords) {
     try {
       const existingDocRes = await pool.query(
         `SELECT id, storage_key FROM public.documents
-         WHERE employee_id = $1 AND document_type = 'Payslip' AND month = $2 AND year = $3 LIMIT 1`,
+         WHERE employee_id = $1 AND LOWER(document_type) = 'payslip' AND month = $2 AND year = $3 LIMIT 1`,
         [record.employee_id, record.month, record.year]
       );
 
@@ -1488,7 +1649,7 @@ const confirmPayrollImport = async (req, res, next) => {
       let shouldGenerate = true;
 
       if (existingDoc) {
-        const isPresent = await storageService.fileExists(existingDoc.storage_key);
+        const isPresent = await storageService.fileExists(existingDoc.storage_key).catch(() => false);
         if (isPresent && normalizedMode !== 'UPDATE_EXISTING') {
           shouldGenerate = false;
           alreadyGeneratedCount++;
@@ -1527,16 +1688,42 @@ const confirmPayrollImport = async (req, res, next) => {
             await pool.query(
               `INSERT INTO public.documents (
                  employee_id, document_type, file_name, storage_key, month, year, uploaded_by
-               ) VALUES ($1, 'Payslip', $2, $3, $4, $5, $6)`,
+               ) VALUES ($1, 'Payslip', $2, $3, $4, $5, $6)
+               ON CONFLICT (employee_id, month, year) WHERE LOWER(document_type) = 'payslip'
+               DO UPDATE SET storage_key = EXCLUDED.storage_key, file_name = EXCLUDED.file_name, updated_at = NOW()`,
               [record.employee_id, originalFileName, storageKey, record.month, record.year, adminUserId]
+            );
+          } else {
+            await pool.query(
+              `UPDATE public.documents SET storage_key = $1, file_name = $2, updated_at = NOW() WHERE id = $3`,
+              [storageKey, originalFileName, existingDoc.id]
             );
           }
           payslipsGenerated++;
+        } else {
+          payslipsFailed++;
         }
       }
     } catch (slipErr) {
       console.error(`Automatic payslip generation error for ${record.employee_id}:`, slipErr.message);
+      payslipsFailed++;
     }
+  }
+
+  // Determine final batch status
+  let finalBatchStatus = 'Completed';
+  if (payslipsFailed > 0) {
+    finalBatchStatus = (payslipsGenerated > 0 || alreadyGeneratedCount > 0) ? 'Partially Completed' : 'Failed';
+  }
+
+  // Update batch record
+  if (batchId) {
+    await pool.query(
+      `UPDATE public.payroll_batches
+       SET status = $1, processed_records = $2, payslips_generated = $3, payslips_failed = $4, updated_at = NOW()
+       WHERE id = $5`,
+      [finalBatchStatus, processedRecords.length, payslipsGenerated, payslipsFailed, batchId]
+    ).catch(() => {});
   }
 
   // Remove import session once successfully imported
@@ -1547,10 +1734,13 @@ const confirmPayrollImport = async (req, res, next) => {
     action: 'PAYROLL_EXCEL_IMPORT',
     entityType: 'PAYROLL',
     metadata: {
+      batchId,
+      batchNumber,
       totalRows: session.rows.length,
       createdCount,
       updatedCount,
       importMode: normalizedMode,
+      status: finalBatchStatus,
     },
     req,
   }).catch(() => {});
@@ -1558,7 +1748,7 @@ const confirmPayrollImport = async (req, res, next) => {
   recordAuditLog({
     action: 'PAYROLL_BULK_PROCESS',
     entityType: 'PAYROLL',
-    metadata: { count: processedRecords.length },
+    metadata: { batchId, count: processedRecords.length },
     req,
   }).catch(() => {});
 
@@ -1566,24 +1756,388 @@ const confirmPayrollImport = async (req, res, next) => {
     action: 'PAYSLIP_BULK_GENERATE',
     entityType: 'DOCUMENT',
     metadata: {
+      batchId,
       generatedCount: payslipsGenerated,
       alreadyGeneratedCount,
+      failedCount: payslipsFailed,
     },
     req,
   }).catch(() => {});
 
   return res.status(200).json({
     success: true,
-    message: `Payroll import completed successfully. Processed ${processedRecords.length} records (${createdCount} created, ${updatedCount} updated). ${payslipsGenerated} payslip(s) generated.`,
+    message: `Payroll import completed successfully. Processed ${processedRecords.length} records (${createdCount} created, ${updatedCount} updated). ${payslipsGenerated} payslip(s) generated${payslipsFailed > 0 ? `, ${payslipsFailed} failed` : ''}.`,
     data: {
+      batchId,
+      batchNumber,
+      batchStatus: finalBatchStatus,
       totalRows: session.rows.length,
       createdCount,
       updatedCount,
+      processedRecords: processedRecords.length,
       payslipsGenerated,
       alreadyGeneratedCount,
-      failedCount: 0,
+      payslipsFailed,
+      failedCount: payslipsFailed,
     },
   });
+};
+
+/**
+ * POST /api/admin/payroll/retry-failed-payslips
+ * Retries payslip PDF generation for employees with missing or ungenerated payslip documents
+ * without recreating or duplicating payroll database records.
+ */
+const retryFailedPayslips = async (req, res, next) => {
+  try {
+    const { month, year, batchId } = req.body;
+    const adminUserId = req.user?.id;
+
+    let monthNum = parseMonthNumber(month);
+    let yearNum = parseYearNumber(year);
+
+    let batchRecord = null;
+    if (batchId) {
+      const batchRes = await pool.query('SELECT * FROM public.payroll_batches WHERE id = $1', [batchId]);
+      if (batchRes.rows.length > 0) {
+        batchRecord = batchRes.rows[0];
+        if (!monthNum) monthNum = batchRecord.month;
+        if (!yearNum) yearNum = batchRecord.year;
+      }
+    }
+
+    if (!monthNum || !yearNum) {
+      return res.status(400).json({
+        success: false,
+        message: 'Month and year are required to retry payslip generation.',
+      });
+    }
+
+    // Query processed payroll records for the period
+    const payrollRes = await pool.query(
+      `SELECT pr.*, e.first_name, e.last_name, e.department, e.designation, e.status AS employee_status
+       FROM public.payroll_records pr
+       JOIN public.employees e ON e.employee_id = pr.employee_id
+       WHERE pr.month = $1 AND pr.year = $2
+       ORDER BY pr.employee_id ASC`,
+      [monthNum, yearNum]
+    );
+
+    if (payrollRes.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: `No payroll records found for ${getMonthName(monthNum)} ${yearNum}.`,
+      });
+    }
+
+    if (process.env.PAYSLIP_REQUIRE_ASSETS === 'true') {
+      const assetStatus = checkAuthorizationAssets();
+      if (!assetStatus.isComplete) {
+        return res.status(422).json({
+          success: false,
+          message: 'Cannot retry payslips: Official company signature or office stamp assets are missing or unreadable. Please configure required genuine PNG assets in Backend/assets/company/.',
+          error: 'MISSING_AUTHORIZATION_ASSETS',
+          missingAssets: assetStatus.missing,
+        });
+      }
+    }
+
+    let retriedGenerated = 0;
+    let retriedFailed = 0;
+    let alreadyValid = 0;
+
+    for (const record of payrollRes.rows) {
+      try {
+        const docRes = await pool.query(
+          `SELECT id, storage_key, file_name FROM public.documents
+           WHERE employee_id = $1 AND LOWER(document_type) = 'payslip' AND month = $2 AND year = $3 LIMIT 1`,
+          [record.employee_id, monthNum, yearNum]
+        );
+
+        let doc = docRes.rows[0];
+        let fileExistsOnDisk = false;
+        if (doc && doc.storage_key) {
+          fileExistsOnDisk = await storageService.fileExists(doc.storage_key).catch(() => false);
+        }
+
+        if (doc && fileExistsOnDisk) {
+          alreadyValid++;
+          continue;
+        }
+
+        // Generate missing PDF
+        const empRes = await pool.query('SELECT * FROM public.employees WHERE employee_id = $1', [record.employee_id]);
+        const pfRes = await pool.query('SELECT uan_number, pf_number FROM public.pf_details WHERE employee_id = $1', [record.employee_id]);
+        const employee = empRes.rows[0] || record;
+        const pfDetails = pfRes.rows[0] || null;
+
+        const pdfBuffer = await generatePayslipPdf({ employee, payroll: record, pfDetails });
+        const monthName = getMonthName(record.month);
+        const fileName = `Payslip_${record.employee_id}_${monthName}_${record.year}.pdf`;
+
+        let storageKey = doc?.storage_key;
+        if (!storageKey) {
+          storageKey = storageService.generateStorageKey({
+            employeeId: record.employee_id,
+            originalFilename: fileName,
+            prefix: 'documents',
+          });
+        }
+
+        await storageService.saveFile(pdfBuffer, storageKey);
+
+        if (doc) {
+          await pool.query(
+            `UPDATE public.documents SET storage_key = $1, file_name = $2, updated_at = NOW() WHERE id = $3`,
+            [storageKey, fileName, doc.id]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO public.documents (
+               employee_id, document_type, file_name, storage_key, month, year, uploaded_by
+             ) VALUES ($1, 'Payslip', $2, $3, $4, $5, $6)
+             ON CONFLICT (employee_id, month, year) WHERE LOWER(document_type) = 'payslip'
+             DO UPDATE SET storage_key = EXCLUDED.storage_key, file_name = EXCLUDED.file_name, updated_at = NOW()`,
+            [record.employee_id, fileName, storageKey, record.month, record.year, adminUserId]
+          );
+        }
+
+        retriedGenerated++;
+      } catch (retryErr) {
+        console.error(`Retry payslip error for ${record.employee_id}:`, retryErr.message);
+        retriedFailed++;
+      }
+    }
+
+    // Update batch record if found
+    const batchTarget = batchRecord?.id
+      ? batchRecord
+      : (await pool.query(
+          'SELECT * FROM public.payroll_batches WHERE month = $1 AND year = $2 ORDER BY created_at DESC LIMIT 1',
+          [monthNum, yearNum]
+        )).rows[0];
+
+    if (batchTarget) {
+      const newPayslipsGen = (batchTarget.payslips_generated || 0) + retriedGenerated;
+      const newPayslipsFailed = Math.max(0, (batchTarget.payslips_failed || 0) - retriedGenerated + retriedFailed);
+      const newStatus = newPayslipsFailed === 0 ? 'Completed' : (newPayslipsGen > 0 ? 'Partially Completed' : 'Failed');
+
+      await pool.query(
+        `UPDATE public.payroll_batches
+         SET payslips_generated = $1, payslips_failed = $2, status = $3, updated_at = NOW()
+         WHERE id = $4`,
+        [newPayslipsGen, newPayslipsFailed, newStatus, batchTarget.id]
+      ).catch(() => {});
+    }
+
+    recordAuditLog({
+      action: 'PAYSLIPS_RETRY_GENERATED',
+      entityType: 'PAYROLL',
+      metadata: {
+        month: monthNum,
+        year: yearNum,
+        retriedGenerated,
+        retriedFailed,
+        alreadyValid,
+        total: payrollRes.rows.length,
+      },
+      req,
+    }).catch(() => {});
+
+    return res.status(200).json({
+      success: true,
+      message: `Retry completed: ${retriedGenerated} payslip(s) generated, ${retriedFailed} failed, ${alreadyValid} were already valid.`,
+      data: {
+        retriedGenerated,
+        retriedFailed,
+        alreadyValid,
+        totalRecords: payrollRes.rows.length,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/admin/payroll/report
+ * Generates and downloads a comprehensive Excel processing / audit report for a payroll period or batch.
+ */
+const downloadPayrollReport = async (req, res, next) => {
+  try {
+    const { batchId, month, year } = req.query;
+
+    let monthNum = parseMonthNumber(month);
+    let yearNum = parseYearNumber(year);
+    let batch = null;
+
+    if (batchId) {
+      const bRes = await pool.query('SELECT * FROM public.payroll_batches WHERE id = $1', [batchId]);
+      if (bRes.rows.length > 0) {
+        batch = bRes.rows[0];
+        if (!monthNum) monthNum = batch.month;
+        if (!yearNum) yearNum = batch.year;
+      }
+    }
+
+    if (!batch && monthNum && yearNum) {
+      const bRes = await pool.query(
+        'SELECT * FROM public.payroll_batches WHERE month = $1 AND year = $2 ORDER BY created_at DESC LIMIT 1',
+        [monthNum, yearNum]
+      );
+      if (bRes.rows.length > 0) {
+        batch = bRes.rows[0];
+      }
+    }
+
+    const now = new Date();
+    if (!monthNum) monthNum = now.getMonth() + 1;
+    if (!yearNum) yearNum = now.getFullYear();
+
+    const recordsRes = await pool.query(
+      `SELECT
+         pr.*,
+         TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS employee_name,
+         e.department,
+         d.id AS document_id,
+         d.storage_key
+       FROM public.payroll_records pr
+       JOIN public.employees e ON e.employee_id = pr.employee_id
+       LEFT JOIN public.documents d
+         ON d.employee_id = pr.employee_id
+        AND LOWER(d.document_type) = 'payslip'
+        AND d.month = pr.month
+        AND d.year = pr.year
+       WHERE pr.month = $1 AND pr.year = $2
+       ORDER BY pr.employee_id ASC`,
+      [monthNum, yearNum]
+    );
+
+    const rows = recordsRes.rows.map((r, idx) => ({
+      rowNumber: idx + 2,
+      employee_id: r.employee_id,
+      employee_name: r.employee_name,
+      department: r.department,
+      month: r.month,
+      year: r.year,
+      working_days: r.working_days,
+      payable_days: r.payable_days,
+      basic_salary: Number(r.basic_salary),
+      hra: Number(r.hra),
+      allowances: Number(r.allowances),
+      gross_salary: Number(r.gross_salary),
+      pf_employee: Number(r.pf_employee),
+      professional_tax: Number(r.professional_tax),
+      other_deductions: Number(r.other_deductions),
+      total_deductions: Number(r.total_deductions),
+      net_salary: Number(r.net_salary),
+      status: 'VALID',
+      payslip_status: r.document_id ? 'Generated' : 'Failed / Pending',
+      errors: r.document_id ? '-' : 'Payslip PDF not generated',
+    }));
+
+    const totalGross = rows.reduce((acc, r) => acc + r.gross_salary, 0);
+    const totalDeductions = rows.reduce((acc, r) => acc + r.total_deductions, 0);
+    const totalNet = rows.reduce((acc, r) => acc + r.net_salary, 0);
+    const payslipsGenerated = rows.filter((r) => r.payslip_status === 'Generated').length;
+    const payslipsFailed = rows.length - payslipsGenerated;
+
+    const reportData = {
+      batchNumber: batch?.batch_number || `REPORT-${yearNum}-${String(monthNum).padStart(2, '0')}`,
+      month: monthNum,
+      year: yearNum,
+      status: batch?.status || (payslipsFailed > 0 ? 'Partially Completed' : 'Completed'),
+      adminName: req.user?.email || 'Authorized Administrator',
+      summary: {
+        totalRecords: rows.length,
+        validRecords: rows.length,
+        invalidRecords: 0,
+        processedRecords: rows.length,
+        payslipsGenerated,
+        payslipsFailed,
+        totalGrossSalary: totalGross,
+        totalDeductions,
+        totalNetSalary: totalNet,
+      },
+      rows,
+    };
+
+    const workbook = await excelPayrollService.generateProcessingReportWorkbook(reportData);
+    const buffer = await workbook.xlsx.writeBuffer();
+
+    const monthName = getMonthName(monthNum);
+    const filename = `Payroll_Processing_Report_${monthName}_${yearNum}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+
+    return res.send(Buffer.from(buffer));
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/admin/payroll/batches
+ * Returns paginated list of payroll batch executions with their workflow statuses.
+ */
+const getAdminPayrollBatches = async (req, res, next) => {
+  try {
+    const { month, year } = req.query;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+
+    const conditions = [];
+    const queryParams = [];
+
+    if (month !== undefined && month !== null && String(month).trim() !== '' && String(month).trim() !== 'All') {
+      const m = parseMonthNumber(month);
+      if (m) {
+        queryParams.push(m);
+        conditions.push(`month = $${queryParams.length}`);
+      }
+    }
+
+    if (year !== undefined && year !== null && String(year).trim() !== '' && String(year).trim() !== 'All') {
+      const y = parseYearNumber(year);
+      if (y) {
+        queryParams.push(y);
+        conditions.push(`year = $${queryParams.length}`);
+      }
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countRes = await pool.query(
+      `SELECT COUNT(*) AS total FROM public.payroll_batches ${whereClause}`,
+      queryParams
+    );
+    const total = parseInt(countRes.rows[0]?.total || 0, 10);
+
+    const dataParams = [...queryParams, limit, offset];
+    const dataRes = await pool.query(
+      `SELECT * FROM public.payroll_batches
+       ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
+      dataParams
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: dataRes.rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 /**
@@ -1975,6 +2529,131 @@ const replaceMonthlyPayslip = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/admin/payroll/authorization-assets-status
+ * Inspects presence and readability of company signature and office stamp.
+ */
+const getAuthorizationAssetsStatus = async (req, res, next) => {
+  try {
+    const status = checkAuthorizationAssets();
+    return res.status(200).json({
+      success: true,
+      data: {
+        isComplete: status.isComplete,
+        requireAssetsEnforced: process.env.PAYSLIP_REQUIRE_ASSETS === 'true',
+        signature: {
+          configuredPath: process.env.COMPANY_SIGNATURE_PATH || 'assets/company/signatory_signature.png',
+          resolvedPath: status.signaturePath,
+          valid: status.signatureValid,
+          sizeBytes: status.signatureSize,
+          recommendedFormat: 'PNG with transparent background, approx 300x120px',
+        },
+        stamp: {
+          configuredPath: process.env.COMPANY_STAMP_PATH || 'assets/company/office_stamp.png',
+          resolvedPath: status.stampPath,
+          valid: status.stampValid,
+          sizeBytes: status.stampSize,
+          recommendedFormat: 'PNG with transparent background, approx 200x200px',
+        },
+        missing: status.missing,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/admin/payroll/preview-payslip-pdf
+ * Generates and streams a preview payslip PDF with isPreview: true.
+ * Allows visual inspection of Indian Rupee symbol (₹), company stamp, and authorized signatory layout.
+ */
+const previewPayslipPdf = async (req, res, next) => {
+  try {
+    const { employee_id, month, year } = req.query;
+
+    let employee = null;
+    let payroll = null;
+    let pfDetails = null;
+
+    if (employee_id) {
+      const empRes = await pool.query(
+        `SELECT employee_id, first_name, last_name, designation, department, email FROM public.employees WHERE employee_id = $1`,
+        [employee_id]
+      );
+      employee = empRes.rows[0];
+
+      if (month && year) {
+        const payRes = await pool.query(
+          `SELECT * FROM public.payroll_records WHERE employee_id = $1 AND month = $2 AND year = $3`,
+          [employee_id, parseInt(month, 10), parseInt(year, 10)]
+        );
+        payroll = payRes.rows[0];
+      }
+    }
+
+    if (!employee) {
+      // Look up any active employee from database
+      const empRes = await pool.query(
+        `SELECT employee_id, first_name, last_name, designation, department, email FROM public.employees WHERE status = 'Active' LIMIT 1`
+      );
+      employee = empRes.rows[0] || {
+        employee_id: 'GP0001N',
+        first_name: 'Rajeev',
+        last_name: 'Appala',
+        designation: 'Lead Software Engineer',
+        department: 'Information Technology',
+      };
+    }
+
+    if (!payroll) {
+      // Look up any recent payroll record or create a realistic preview record
+      const payRes = await pool.query(
+        `SELECT * FROM public.payroll_records WHERE employee_id = $1 ORDER BY year DESC, month DESC LIMIT 1`,
+        [employee.employee_id]
+      );
+      payroll = payRes.rows[0] || {
+        employee_id: employee.employee_id,
+        month: month ? parseInt(month, 10) : (new Date().getMonth() + 1),
+        year: year ? parseInt(year, 10) : new Date().getFullYear(),
+        working_days: 26,
+        payable_days: 26,
+        basic_salary: 25000.00,
+        hra: 15000.00,
+        allowances: 5000.00,
+        gross_salary: 45000.00,
+        pf_employee: 1800.00,
+        professional_tax: 200.00,
+        other_deductions: 500.00,
+        total_deductions: 2500.00,
+        net_salary: 42500.00,
+        status: 'Processed',
+      };
+    }
+
+    const pfRes = await pool.query(
+      `SELECT uan_number, pf_number FROM public.pf_details WHERE employee_id = $1`,
+      [employee.employee_id]
+    );
+    pfDetails = pfRes.rows[0] || { uan_number: '101234567890', pf_number: 'GAINT/PF/001' };
+
+    const pdfBuffer = await generatePayslipPdf({
+      employee,
+      payroll,
+      pfDetails,
+      isPreview: true,
+      requireAssets: false,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="Payslip_Preview.pdf"');
+    res.setHeader('Content-Length', pdfBuffer.length);
+    return res.end(pdfBuffer);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAdminPayrollRecords,
   getAdminPayrollHistory,
@@ -1988,7 +2667,12 @@ module.exports = {
   downloadPayrollTemplate,
   previewPayrollImport,
   confirmPayrollImport,
+  retryFailedPayslips,
+  downloadPayrollReport,
+  getAdminPayrollBatches,
   getMonthlyPayslips,
   uploadMonthlyPayslip,
   replaceMonthlyPayslip,
+  getAuthorizationAssetsStatus,
+  previewPayslipPdf,
 };

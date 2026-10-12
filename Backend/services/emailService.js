@@ -1,7 +1,9 @@
 const nodemailer = require('nodemailer');
 
+let cachedTransporter = null;
+
 /**
- * Creates and configures the Nodemailer SMTP transporter.
+ * Creates and configures the Nodemailer SMTP transporter with connection pooling.
  * Values are retrieved strictly from environment variables.
  */
 const createTransporter = () => {
@@ -10,6 +12,10 @@ const createTransporter = () => {
   const secure = process.env.EMAIL_SECURE === 'true' || port === 465;
   const user = process.env.SMTP_USER || process.env.EMAIL_USER;
   const pass = process.env.SMTP_PASS || process.env.EMAIL_PASSWORD;
+
+  const connectionTimeout = parseInt(process.env.SMTP_CONNECTION_TIMEOUT, 10) || 10000;
+  const greetingTimeout = parseInt(process.env.SMTP_GREETING_TIMEOUT, 10) || 10000;
+  const socketTimeout = parseInt(process.env.SMTP_SOCKET_TIMEOUT, 10) || 15000;
 
   // If credentials are not configured, warn on server (without exposing secrets)
   if (!user || !pass) {
@@ -21,6 +27,9 @@ const createTransporter = () => {
   }
 
   return nodemailer.createTransport({
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 100,
     host,
     port,
     secure,
@@ -28,7 +37,59 @@ const createTransporter = () => {
       user,
       pass,
     },
+    connectionTimeout,
+    greetingTimeout,
+    socketTimeout,
   });
+};
+
+/**
+ * Returns a cached singleton transporter instance to reuse established SMTP connections.
+ */
+const getTransporter = () => {
+  if (!cachedTransporter) {
+    cachedTransporter = createTransporter();
+  }
+  return cachedTransporter;
+};
+
+/**
+ * Resets the cached transporter on connection/socket failures so subsequent requests
+ * can re-establish a healthy pool cleanly.
+ */
+const resetTransporter = () => {
+  if (cachedTransporter && typeof cachedTransporter.close === 'function') {
+    try {
+      cachedTransporter.close();
+    } catch (_) {}
+  }
+  cachedTransporter = null;
+};
+
+/**
+ * Verifies SMTP connectivity at server startup or during health checks.
+ * Avoid running this on individual OTP requests to prevent unnecessary latency.
+ */
+const verifySmtpConnection = async () => {
+  if (process.env.NODE_ENV === 'test') {
+    return { verified: true, isTestMode: true };
+  }
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASSWORD;
+  if (!user || !pass) {
+    console.warn('[SMTP_STARTUP] SMTP credentials not fully configured; email dispatch may be unavailable.');
+    return { verified: false, reason: 'missing_credentials' };
+  }
+  try {
+    const transporter = getTransporter();
+    await transporter.verify();
+    console.log('[SMTP_STARTUP] SMTP connection verified successfully.');
+    return { verified: true };
+  } catch (err) {
+    const sanitizedMsg = sanitizeEmailError(err?.message);
+    console.warn(`[SMTP_STARTUP] SMTP connection verification warning: ${sanitizedMsg}`);
+    return { verified: false, error: sanitizedMsg };
+  }
 };
 
 /**
@@ -213,7 +274,7 @@ GaintPro Employee Portal`;
   console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Email dispatch started via SMTP transport. Recipient: ${displayEmail}`);
 
   try {
-    const transporter = createTransporter();
+    const transporter = getTransporter();
     const info = await transporter.sendMail({
       from,
       to,
@@ -229,6 +290,9 @@ GaintPro Employee Portal`;
       messageId: info.messageId,
     };
   } catch (error) {
+    // Reset transporter on connection failure to discard stale pool sockets
+    resetTransporter();
+
     const sanitizedErrorMsg = sanitizeEmailError(error?.message);
     const errCode = error?.code || error?.responseCode || 'UNKNOWN';
     console.error(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] SMTP rejected message: code=${errCode}, responseCode=${error?.responseCode || 'N/A'}, command=${error?.command || 'N/A'}, error=${sanitizedErrorMsg}`);
@@ -241,8 +305,10 @@ GaintPro Employee Portal`;
 
 module.exports = {
   sendOtpEmail,
-  // Exported for testing or verification
+  getTransporter,
   createTransporter,
+  resetTransporter,
+  verifySmtpConnection,
   sanitizeEmailError,
   // Test-only utilities (guarded against production usage)
   getTestDispatchedEmails,
