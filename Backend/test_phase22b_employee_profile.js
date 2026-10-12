@@ -217,7 +217,7 @@ async function runTests() {
     // -------------------------------------------------------------------------
     // TEST 2: Profile Update - Whitelisted Personal Fields (PUT /api/employee/profile)
     // -------------------------------------------------------------------------
-    console.log('\n--- 2. Profile Update - Whitelisted Fields ---');
+    console.log('\n--- 2. Profile Update - Strictly Read-Only Enforcement ---');
     const updatePayload = {
       personal_email: 'emp1.updated@personal-test.com',
       phone: '9876543210',
@@ -244,36 +244,13 @@ async function runTests() {
       updatePayload
     );
 
-    assert(updateRes.statusCode === 200, 'PUT /api/employee/profile returns HTTP 200 OK');
+    assert(updateRes.statusCode === 403, 'PUT /api/employee/profile is strictly read-only and returns 403 Forbidden');
     const updateJson = updateRes.json();
-    assert(updateJson && updateJson.success === true, 'Update response indicates success = true');
-    assert(updateJson.data.personal_email === updatePayload.personal_email, 'personal_email successfully updated');
-    assert(updateJson.data.phone === updatePayload.phone, 'phone successfully updated');
-    assert(updateJson.data.address === updatePayload.address, 'address successfully updated');
-    assert(updateJson.data.city === updatePayload.city, 'city successfully updated');
-    assert(updateJson.data.postal_code === updatePayload.postal_code, 'postal_code successfully updated');
-    assert(updateJson.data.emergency_contact_name === updatePayload.emergency_contact_name, 'emergency_contact_name updated');
-    assert(updateJson.data.emergency_contact_phone === updatePayload.emergency_contact_phone, 'emergency_contact_phone updated');
-
-    // Verify PostgreSQL database reflects the update
-    const dbEmp1 = (await pool.query(
-      'SELECT personal_email, phone, address, city, state, postal_code, emergency_contact_name, emergency_contact_phone FROM public.employees WHERE employee_id = $1',
-      [emp1.employee_id]
-    )).rows[0];
-    assert(dbEmp1.personal_email === updatePayload.personal_email, 'Database reflects updated personal_email');
-    assert(dbEmp1.phone === updatePayload.phone, 'Database reflects updated phone');
-    assert(dbEmp1.postal_code === updatePayload.postal_code, 'Database reflects updated postal_code');
-
-    // Verify users.phone synchronization
-    const dbUser1 = (await pool.query('SELECT phone FROM public.users WHERE id = $1', [emp1.user_id])).rows[0];
-    assert(dbUser1.phone === updatePayload.phone, 'users table phone synchronized with employees table');
-
-    // Verify audit log
-    const auditRes = await pool.query(
-      "SELECT * FROM public.audit_logs WHERE action = 'EMPLOYEE_PROFILE_UPDATED' AND entity_id = $1 ORDER BY created_at DESC LIMIT 1",
-      [emp1.employee_id]
+    assert(updateJson && updateJson.success === false, 'Update response indicates success = false');
+    assert(
+      updateJson && (updateJson.message?.includes('read-only') || updateJson.message?.includes('HR-managed')),
+      'Error message clearly explains profile is read-only for employees'
     );
-    assert(auditRes.rows.length > 0, "Audit log record created with action 'EMPLOYEE_PROFILE_UPDATED'");
 
     // -------------------------------------------------------------------------
     // TEST 3: Field Whitelist Protection (Attempt to Modify Official / Protected Data)

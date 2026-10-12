@@ -15,29 +15,29 @@ router.get(
 );
 
 // PUT /api/admin/attendance/:attendanceId
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN.
+// Strictly protected: requires valid JWT session and role ADMIN.
 router.put(
   '/:attendanceId',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   attendanceController.updateAttendance
 );
 
 // POST /api/admin/attendance/mark-all-present
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN.
+// Strictly protected: requires valid JWT session and role ADMIN.
 router.post(
   '/mark-all-present',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   attendanceController.markAllPresent
 );
 
 // GET /api/admin/attendance/monthly?month=YYYY-MM
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN.
+// Strictly protected: requires valid JWT session and role ADMIN.
 router.get(
   '/monthly',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   attendanceController.getMonthlyAttendance
 );
 

@@ -6,40 +6,40 @@ const { authenticateToken, requireRole } = require('../middleware/authMiddleware
 const { uploadSingleDocument } = require('../middleware/uploadMiddleware');
 
 // GET /api/admin/documents
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN
+// Strictly protected: requires valid JWT session and role ADMIN
 router.get(
   '/',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   documentController.getAdminDocuments
 );
 
 // GET /api/admin/documents/:documentId/download
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN
+// Strictly protected: requires valid JWT session and role ADMIN
 router.get(
   '/:documentId/download',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   documentController.downloadAdminDocument
 );
 
 const { fileUploadLimiter } = require('../middleware/rateLimitMiddleware');
 
 // DELETE /api/admin/documents/:documentId
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN
+// Strictly protected: requires valid JWT session and role ADMIN
 router.delete(
   '/:documentId',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   documentController.deleteAdminDocument
 );
 
 // POST /api/admin/documents
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN
+// Strictly protected: requires valid JWT session and role ADMIN
 router.post(
   '/',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   fileUploadLimiter,
   uploadSingleDocument,
   documentController.uploadDocument

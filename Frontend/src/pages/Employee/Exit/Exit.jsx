@@ -26,7 +26,8 @@ const getMinDate = () => new Date().toISOString().split('T')[0];
 export default function EmployeeExit() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [downloading, setDownloading] = useState({});
+  const [downloadingDocId, setDownloadingDocId] = useState(null);
+  const [viewingDocId, setViewingDocId] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -34,6 +35,7 @@ export default function EmployeeExit() {
     exitRequest: null,
     clearances: [],
     settlement: null,
+    exitDocuments: [],
   });
 
   // Form State
@@ -100,7 +102,7 @@ export default function EmployeeExit() {
         reason: reason.trim(),
       });
       if (res && res.success) {
-        setSuccess('Resignation request submitted successfully.');
+        setSuccess('Resignation request submitted successfully. Status: Pending Admin Review.');
         setRequestedRelievingDate('');
         setReason('');
         await fetchExitStatus();
@@ -129,29 +131,44 @@ export default function EmployeeExit() {
     }
   };
 
-  const handleDownload = async (docType, apiFunc) => {
+  const handleViewExitDoc = async (doc) => {
     try {
-      setDownloading((prev) => ({ ...prev, [docType]: true }));
+      setViewingDocId(doc.id);
       setError('');
-      const blob = await apiFunc();
+      const blob = await api.employee.exit.viewDocument(doc.id);
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err) {
+      setError(err?.message || `Failed to view ${doc.document_type}.`);
+    } finally {
+      setViewingDocId(null);
+    }
+  };
+
+  const handleDownloadExitDoc = async (doc) => {
+    try {
+      setDownloadingDocId(doc.id);
+      setError('');
+      const blob = await api.employee.exit.downloadDocument(doc.id);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${docType.replace(/\s+/g, '_')}.pdf`;
+      a.download = doc.document_name || `${doc.document_type.replace(/\s+/g, '_')}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err?.message || `Failed to download ${docType}.`);
+      setError(err?.message || `Failed to download ${doc.document_type}.`);
     } finally {
-      setDownloading((prev) => ({ ...prev, [docType]: false }));
+      setDownloadingDocId(null);
     }
   };
 
   const exitRequest = exitData.exitRequest;
   const clearances = exitData.clearances || [];
   const settlement = exitData.settlement;
+  const exitDocuments = exitData.exitDocuments || [];
   const status = exitRequest?.status;
 
   const minDate = getMinDate();
@@ -161,7 +178,9 @@ export default function EmployeeExit() {
       <div className="exit-header">
         <div>
           <h1 className="exit-title">Exit & Relieving</h1>
-          <p className="exit-subtitle">Manage your resignation, track department clearances, and download official relieving letters.</p>
+          <p className="exit-subtitle">
+            Manage your resignation request, monitor department clearances, view settlement details, and access official exit documents.
+          </p>
         </div>
       </div>
 
@@ -179,13 +198,16 @@ export default function EmployeeExit() {
           <div className="exit-card">
             <h2 className="exit-card-title">Submit Resignation</h2>
             <p className="exit-card-desc">
-              Please enter your proposed last working day and the reason for leaving. Submitting this form initiates standard notice period tracking and departmental clearance workflows.
+              Please enter your proposed last working day and the reason for leaving. Once submitted, your request will be reviewed and decided by Admin.
             </p>
 
             {status === 'REJECTED' && (
               <div className="exit-alert exit-alert-warning">
-                Your previous resignation submitted on {formatDate(exitRequest.resignation_date)} was rejected.
-                {exitRequest.admin_remarks && ` Remarks: "${exitRequest.admin_remarks}"`}
+                <strong>Resignation Status: Declined</strong>
+                <p style={{ margin: '0.25rem 0 0 0' }}>
+                  Your previous resignation submitted on {formatDate(exitRequest.resignation_date)} was declined by Admin.
+                  {exitRequest.admin_remarks && ` Reason: "${exitRequest.admin_remarks}"`}
+                </p>
               </div>
             )}
 
@@ -242,7 +264,7 @@ export default function EmployeeExit() {
             <h3 className="exit-info-title">Offboarding Guidelines</h3>
             <ul className="exit-policy-list">
               <li>
-                <strong>Notice Period:</strong> Ensure your requested date aligns with company terms. Admin will confirm the final relieving date.
+                <strong>Admin Decision:</strong> Resignation requests are reviewed by Admin/HR. Admin will confirm the company-approved Last Working Day.
               </li>
               <li>
                 <strong>Clearance Handover:</strong> Handover company hardware (IT), settle corporate dues (Finance), and complete knowledge transfer (Department Head).
@@ -251,7 +273,7 @@ export default function EmployeeExit() {
                 <strong>Leave Encashment:</strong> Eligible accrued Paid Leave (PL) balance will be calculated in your Full & Final (F&F) settlement.
               </li>
               <li>
-                <strong>Official Documents:</strong> Relieving Letter, Experience Certificate, and F&F Settlement Statement become downloadable immediately upon finalization.
+                <strong>Exit Documents:</strong> Official exit documents (Relieving Letter, Experience Certificate, F&F Statement) are uploaded by Admin and become available on their designated release dates.
               </li>
             </ul>
           </div>
@@ -273,7 +295,7 @@ export default function EmployeeExit() {
               <div className="step-line" />
               <div className={`step-item ${['APPROVED', 'COMPLETED'].includes(status) ? 'step-active' : ''}`}>
                 <div className="step-circle">3</div>
-                <div className="step-label">Approved</div>
+                <div className="step-label">Accepted</div>
               </div>
               <div className="step-line" />
               <div className={`step-item ${status === 'COMPLETED' ? 'step-active' : ''}`}>
@@ -287,7 +309,9 @@ export default function EmployeeExit() {
           <div className="exit-card exit-summary-card">
             <div className="exit-summary-header">
               <div>
-                <span className={`exit-status-badge badge-${status.toLowerCase()}`}>{status.replace('_', ' ')}</span>
+                <span className={`exit-status-badge badge-${status.toLowerCase()}`}>
+                  {status === 'APPROVED' ? 'Accepted' : status === 'SUBMITTED' ? 'Pending Admin Review' : status.replace('_', ' ')}
+                </span>
                 <h2 className="exit-summary-title">Resignation Request Overview</h2>
               </div>
               {(status === 'SUBMITTED' || status === 'UNDER_REVIEW') && (
@@ -303,17 +327,23 @@ export default function EmployeeExit() {
 
             <div className="exit-details-grid">
               <div className="detail-item">
-                <span className="detail-label">Submission Date</span>
+                <span className="detail-label">Resignation Status</span>
+                <span className="detail-value font-semibold">
+                  {status === 'APPROVED' ? 'Accepted' : status === 'SUBMITTED' ? 'Pending Admin Review' : status === 'UNDER_REVIEW' ? 'Under Review' : status}
+                </span>
+              </div>
+              <div className="detail-item">
+                <span className="detail-label">Resignation Date</span>
                 <span className="detail-value">{formatDate(exitRequest.resignation_date)}</span>
               </div>
               <div className="detail-item">
-                <span className="detail-label">Requested Relieving Date</span>
-                <span className="detail-value">{formatDate(exitRequest.requested_relieving_date)}</span>
-              </div>
-              <div className="detail-item">
-                <span className="detail-label">Approved Relieving Date</span>
+                <span className="detail-label">
+                  {status === 'APPROVED' || status === 'COMPLETED' ? 'Approved Last Working Day' : 'Requested Last Working Day'}
+                </span>
                 <span className="detail-value font-semibold">
-                  {exitRequest.approved_relieving_date ? formatDate(exitRequest.approved_relieving_date) : 'Pending Review'}
+                  {status === 'APPROVED' || status === 'COMPLETED'
+                    ? (exitRequest.approved_relieving_date ? formatDate(exitRequest.approved_relieving_date) : formatDate(exitRequest.requested_relieving_date))
+                    : formatDate(exitRequest.requested_relieving_date)}
                 </span>
               </div>
               <div className="detail-item">
@@ -356,77 +386,105 @@ export default function EmployeeExit() {
             </div>
           </div>
 
-          {/* Completed Exit Documents */}
-          {status === 'COMPLETED' && (
+          {/* Full & Final Settlement (If completed) */}
+          {settlement && (
+            <div className="exit-card">
+              <h2 className="exit-card-title">Full & Final Settlement</h2>
+              <div className="settlement-summary-box">
+                <div className="settlement-stat">
+                  <span>Status</span>
+                  <strong className="text-emerald">Completed</strong>
+                </div>
+                <div className="settlement-stat">
+                  <span>Payable Days</span>
+                  <strong>{settlement.payable_days} days</strong>
+                </div>
+                <div className="settlement-stat">
+                  <span>Encashed PL</span>
+                  <strong>{settlement.encashed_leave_days} days</strong>
+                </div>
+                <div className="settlement-stat">
+                  <span>Net Settlement</span>
+                  <strong className="text-emerald">{formatINR(settlement.net_payable_amount)}</strong>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Official Exit Documents (Available after Resignation Acceptance) */}
+          {(status === 'APPROVED' || status === 'COMPLETED') && (
             <div className="exit-card exit-documents-card">
               <h2 className="exit-card-title">Official Exit Documents</h2>
               <p className="exit-card-desc">
-                Your offboarding and Full & Final settlement have been completed. You can download your official, verified separation documents below:
+                Official separation documents prepared by the company. Each document becomes available for viewing and downloading on its designated release date.
               </p>
 
-              {settlement && (
-                <div className="settlement-summary-box">
-                  <div className="settlement-stat">
-                    <span>Payable Days</span>
-                    <strong>{settlement.payable_days} days</strong>
-                  </div>
-                  <div className="settlement-stat">
-                    <span>Encashed PL</span>
-                    <strong>{settlement.encashed_leave_days} days</strong>
-                  </div>
-                  <div className="settlement-stat">
-                    <span>Net Settlement</span>
-                    <strong className="text-emerald">{formatINR(settlement.net_payable_amount)}</strong>
-                  </div>
+              {exitDocuments.length > 0 ? (
+                <div className="exit-download-grid">
+                  {exitDocuments.map((doc) => {
+                    const isAvailable = doc.is_available || doc.status === 'AVAILABLE';
+
+                    return (
+                      <div key={doc.id} className={`download-tile ${isAvailable ? 'tile-available' : 'tile-scheduled'}`}>
+                        <div className="download-tile-info">
+                          <div className="tile-badge-row">
+                            <span className={`exit-doc-status-pill ${isAvailable ? 'pill-available' : 'pill-scheduled'}`}>
+                              {isAvailable ? 'Available' : `Available from ${formatDate(doc.release_date)}`}
+                            </span>
+                          </div>
+                          <h3>{doc.document_type}</h3>
+                          <p className="doc-tile-desc">
+                            {isAvailable
+                              ? `Released on ${formatDate(doc.release_date)}. Official verified exit document.`
+                              : `Scheduled for release on ${formatDate(doc.release_date)}. This document will unlock on the release date.`}
+                          </p>
+                          {doc.remarks && <p className="doc-remarks-small">Note: {doc.remarks}</p>}
+                        </div>
+
+                        <div className="download-tile-actions">
+                          {isAvailable ? (
+                            <div className="doc-btn-group">
+                              <button
+                                type="button"
+                                disabled={viewingDocId === doc.id}
+                                onClick={() => handleViewExitDoc(doc)}
+                                className="exit-btn exit-btn-sm exit-btn-secondary"
+                              >
+                                {viewingDocId === doc.id ? 'Opening...' : 'View PDF'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={downloadingDocId === doc.id}
+                                onClick={() => handleDownloadExitDoc(doc)}
+                                className="exit-btn exit-btn-sm exit-btn-primary"
+                              >
+                                {downloadingDocId === doc.id ? 'Downloading...' : 'Download'}
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              className="exit-btn exit-btn-locked"
+                              title={`This document unlocks on ${formatDate(doc.release_date)}`}
+                            >
+                              🔒 Available on {formatDate(doc.release_date)}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="exit-empty-docs-box">
+                  <div className="empty-docs-icon">📄</div>
+                  <h4>Exit Documents in Preparation</h4>
+                  <p>
+                    Your exit documents (such as Relieving Letter, Experience Certificate, and F&F Settlement Statement) are prepared by HR/Management and uploaded with scheduled release dates. Once scheduled, they will appear here.
+                  </p>
                 </div>
               )}
-
-              <div className="exit-download-grid">
-                <div className="download-tile">
-                  <div className="download-tile-info">
-                    <h3>Relieving Letter</h3>
-                    <p>Official release confirming resignation acceptance and service dates.</p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={downloading['Relieving Letter']}
-                    onClick={() => handleDownload('Relieving Letter', api.employee.exit.downloadRelievingLetter)}
-                    className="exit-btn exit-btn-outline"
-                  >
-                    {downloading['Relieving Letter'] ? 'Downloading...' : 'Download PDF'}
-                  </button>
-                </div>
-
-                <div className="download-tile">
-                  <div className="download-tile-info">
-                    <h3>Experience Certificate</h3>
-                    <p>Formal certificate detailing employment period, role, and conduct.</p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={downloading['Experience Certificate']}
-                    onClick={() => handleDownload('Experience Certificate', api.employee.exit.downloadExperienceCertificate)}
-                    className="exit-btn exit-btn-outline"
-                  >
-                    {downloading['Experience Certificate'] ? 'Downloading...' : 'Download PDF'}
-                  </button>
-                </div>
-
-                <div className="download-tile">
-                  <div className="download-tile-info">
-                    <h3>F&F Settlement Statement</h3>
-                    <p>Itemized breakdown of prorated salary, leave encashment, and deductions.</p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={downloading['FnF Statement']}
-                    onClick={() => handleDownload('FnF Statement', api.employee.exit.downloadFnfStatement)}
-                    className="exit-btn exit-btn-outline"
-                  >
-                    {downloading['FnF Statement'] ? 'Downloading...' : 'Download PDF'}
-                  </button>
-                </div>
-              </div>
             </div>
           )}
         </div>

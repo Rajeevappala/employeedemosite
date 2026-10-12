@@ -174,7 +174,11 @@ function Dashboard() {
     departments,
     recent_leaves,
     recent_payroll,
+    birthday_employees: birthdayEmployees = [],
+    birthday_month_name: birthdayMonthName = '',
   } = dashboardData || {};
+
+  const todayBirthdays = birthdayEmployees.filter((b) => b.is_today);
 
   const activePercent = employees?.total > 0
     ? Math.round((employees.active / employees.total) * 1000) / 10
@@ -705,7 +709,108 @@ function Dashboard() {
         </div>
       </section>
 
-      {/* 7. Recent Leave Requests */}
+      {/* 7. Employee Birthdays */}
+      <section className="admin-card admin-birthday-card" aria-label="Employee Birthdays">
+        <div className="admin-card-header">
+          <div className="admin-card-header-left">
+            <h2 className="admin-card-title">
+              🎂 Employee Birthdays {birthdayMonthName ? `· ${birthdayMonthName}` : ''}
+            </h2>
+            <p className="admin-card-subtitle">
+              Active employees celebrating their birthday in {birthdayMonthName || 'this month'}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="admin-card-action-link"
+            onClick={() => navigate('/admin/employees')}
+          >
+            Manage Employees &rarr;
+          </button>
+        </div>
+
+        {todayBirthdays.length > 0 && (
+          <div className="admin-birthday-today-banner" role="status" aria-label="Today's Birthday">
+            <div className="admin-birthday-sparkle" aria-hidden="true">🎉</div>
+            <div className="admin-birthday-today-info">
+              {todayBirthdays.map((b, idx) => (
+                <div key={idx} className="admin-birthday-today-item">
+                  <span className="admin-birthday-today-greeting">
+                    Happy Birthday, {b.employee_name}!
+                  </span>
+                  <span className="admin-birthday-today-sub">
+                    Today · {b.department || 'General'} · {b.designation || 'Staff'} ({b.employee_id})
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {birthdayEmployees.length === 0 ? (
+          <div className="admin-empty-state-box">
+            <div className="admin-empty-state-icon" aria-hidden="true" style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>
+              🎂
+            </div>
+            <h3 className="admin-empty-state-title">No employee birthdays this month.</h3>
+            <p className="admin-empty-state-desc">
+              No active employees have a birthday in {birthdayMonthName || 'the current month'}.
+            </p>
+          </div>
+        ) : (
+          <div className="admin-table-container">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th scope="col">Employee Name</th>
+                  <th scope="col">Employee ID</th>
+                  <th scope="col">Department</th>
+                  <th scope="col">Designation</th>
+                  <th scope="col">Birthday</th>
+                  <th scope="col" className="text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {birthdayEmployees.map((b, idx) => (
+                  <tr key={b.employee_id || idx} className={b.is_today ? 'admin-tr-today-bday' : ''}>
+                    <td>
+                      <span className="admin-user-name-strong">{b.employee_name}</span>
+                    </td>
+                    <td>
+                      <span className="admin-id-badge">{b.employee_id}</span>
+                    </td>
+                    <td>
+                      <span className="admin-dept-tag">{b.department || 'General'}</span>
+                    </td>
+                    <td className="text-muted">
+                      {b.designation || '—'}
+                    </td>
+                    <td>
+                      <span className="admin-bday-tag">
+                        📅 {b.birthday_label}
+                      </span>
+                    </td>
+                    <td className="text-right">
+                      {b.is_today ? (
+                        <span className="admin-status-badge status-active">
+                          <span className="status-dot" aria-hidden="true"></span>
+                          🎉 Today!
+                        </span>
+                      ) : (
+                        <span className="admin-status-badge status-processed">
+                          Upcoming
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* 8. Recent Leave Requests */}
       <section className="admin-card" aria-label="Recent Leave Requests">
         <div className="admin-card-header">
           <div>

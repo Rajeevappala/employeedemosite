@@ -50,7 +50,43 @@ function EmployeeDetails() {
     }, 3500);
   };
 
-  const applyEmployeeData = (raw) => {
+  // Bank Details Verification Modal State
+  const [isBankVerifyModalOpen, setIsBankVerifyModalOpen] = useState(false);
+  const [bankVerifyStatus, setBankVerifyStatus] = useState('Verified');
+  const [bankVerifyRemarks, setBankVerifyRemarks] = useState('');
+  const [submittingBankVerify, setSubmittingBankVerify] = useState(false);
+
+  const handleOpenBankVerifyModal = () => {
+    if (employee?.bankDetails) {
+      setBankVerifyStatus(employee.bankDetails.verificationStatus === 'Rejected' ? 'Rejected' : 'Verified');
+      setBankVerifyRemarks(employee.bankDetails.adminRemarks || '');
+      setIsBankVerifyModalOpen(true);
+    }
+  };
+
+  const handleBankVerifySubmit = async (e) => {
+    e.preventDefault();
+    if (!employeeId) return;
+    setSubmittingBankVerify(true);
+    try {
+      const response = await api.admin.verifyEmployeeBankDetails(employeeId, {
+        verification_status: bankVerifyStatus,
+        admin_remarks: bankVerifyRemarks,
+      });
+      if (response && response.success) {
+        showToast(response.message || `Bank details marked as ${bankVerifyStatus}.`);
+        setIsBankVerifyModalOpen(false);
+        fetchEmployeeDetails();
+      }
+    } catch (err) {
+      showToast(err.message || 'Failed to update bank details verification.');
+    } finally {
+      setSubmittingBankVerify(false);
+    }
+  };
+
+
+  const applyEmployeeData = (raw, bankRaw = null) => {
     const fullName = [raw.first_name, raw.last_name].filter(Boolean).join(' ') || raw.employee_id;
     const formattedStatus = raw.status
       ? raw.status.charAt(0).toUpperCase() + raw.status.slice(1).toLowerCase()
@@ -77,20 +113,52 @@ function EmployeeDetails() {
       workLocation: [raw.city, raw.state].filter(Boolean).join(', ') || 'Hyderabad',
       reportingManager: raw.reporting_manager || 'Admin',
       pf: {
-        uan: '—',
-        pfNumber: '—',
-        employerContribution: '—',
-        employeeContribution: '—',
-        pfStatus: 'Not Configured',
+        uan: raw.pf_details?.uan_number || '—',
+        pfNumber: raw.pf_details?.pf_number || '—',
+        employerContribution: raw.pf_details?.employer_contribution ? `₹${raw.pf_details.employer_contribution}` : '—',
+        employeeContribution: raw.pf_details?.employee_contribution ? `₹${raw.pf_details.employee_contribution}` : (raw.payroll_profiles?.pf_employee ? `₹${raw.payroll_profiles.pf_employee}` : '—'),
+        pfStatus: raw.pf_details?.pf_status || (raw.pf_details?.uan_number ? 'Configured' : 'Not Configured'),
       },
       leaveSummary: {
-        pl: { total: 0, used: 0, remaining: 0 },
-        sick: { total: 0, used: 0, remaining: 0 },
-        upl: { used: 0 },
+        pl: {
+          total: raw.leave_balances?.paid_leave_total ?? 12,
+          used: raw.leave_balances?.paid_leave_used ?? 0,
+          remaining: raw.leave_balances?.paid_leave_balance ?? 12,
+        },
+        sick: {
+          total: raw.leave_balances?.sick_leave_total ?? 10,
+          used: raw.leave_balances?.sick_leave_used ?? 0,
+          remaining: raw.leave_balances?.sick_leave_balance ?? 10,
+        },
+        upl: {
+          used: raw.leave_balances?.unpaid_leave_balance ?? 0,
+        },
       },
-      documents: [],
-      recentLeaves: [],
+      documents: Array.isArray(raw.documents) ? raw.documents : [],
+      recentLeaves: Array.isArray(raw.recent_leaves) ? raw.recent_leaves : [],
+      bankDetails: (raw.bank_details || bankRaw) ? {
+        id: bankRaw?.id || raw.bank_details?.id,
+        accountHolderName: bankRaw?.account_holder_name || raw.bank_details?.account_holder_name || '—',
+        bankName: bankRaw?.bank_name || raw.bank_details?.bank_name || '—',
+        accountNumber: bankRaw?.account_number
+          ? bankRaw.account_number
+          : (bankLoadError || bankRaw?.account_number_error || !bankRaw?.account_number)
+            ? 'Unable to load the full account number. Please retry.'
+            : '—',
+        accountNumberError: !bankRaw?.account_number && Boolean(bankLoadError || bankRaw?.account_number_error || raw.bank_details),
+        accountNumberLast4: bankRaw?.account_number_last4 || raw.bank_details?.account_number_last4 || '',
+        ifscCode: bankRaw?.ifsc_code || raw.bank_details?.ifsc_code || '—',
+        branchName: bankRaw?.branch_name || raw.bank_details?.branch_name || '—',
+        branchCity: bankRaw?.branch_city || raw.bank_details?.branch_city || '—',
+        branchState: bankRaw?.branch_state || raw.bank_details?.branch_state || '—',
+        accountType: bankRaw?.account_type || raw.bank_details?.account_type || 'Savings',
+        verificationStatus: bankRaw?.verification_status || raw.bank_details?.verification_status || 'Pending',
+        adminRemarks: bankRaw?.admin_remarks || raw.bank_details?.admin_remarks || '',
+        createdAt: bankRaw?.created_at || raw.bank_details?.created_at,
+        updatedAt: bankRaw?.updated_at || raw.bank_details?.updated_at,
+      } : null,
     });
+
   };
 
   const fetchEmployeeDetails = useCallback(async () => {
@@ -98,9 +166,13 @@ function EmployeeDetails() {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.admin.getEmployee(employeeId);
+      const [response, bankResponse] = await Promise.all([
+        api.admin.getEmployee(employeeId),
+        api.admin.getEmployeeBankDetails(employeeId).catch((err) => ({ error: err })),
+      ]);
       if (response && response.success && response.data) {
-        applyEmployeeData(response.data);
+        const bankLoadError = Boolean(bankResponse?.error) || Boolean(bankResponse?.data?.account_number_error);
+        applyEmployeeData(response.data, bankResponse?.data || null, bankLoadError);
       } else {
         setError('Employee not found.');
       }
@@ -121,11 +193,15 @@ function EmployeeDetails() {
     let ignore = false;
     if (!employeeId) return;
 
-    api.admin.getEmployee(employeeId)
-      .then((response) => {
+    Promise.all([
+      api.admin.getEmployee(employeeId),
+      api.admin.getEmployeeBankDetails(employeeId).catch((err) => ({ error: err })),
+    ])
+      .then(([response, bankResponse]) => {
         if (ignore) return;
         if (response && response.success && response.data) {
-          applyEmployeeData(response.data);
+          const bankLoadError = Boolean(bankResponse?.error) || Boolean(bankResponse?.data?.account_number_error);
+          applyEmployeeData(response.data, bankResponse?.data || null, bankLoadError);
         } else {
           setError('Employee not found.');
         }
@@ -151,24 +227,9 @@ function EmployeeDetails() {
     };
   }, [employeeId]);
 
-  // Open edit modal & sync values
+  // Navigate to dedicated multi-step edit page
   const handleOpenEditModal = () => {
-    if (!employee) return;
-    setEditError('');
-    setEditForm({
-      firstName: employee.firstName,
-      lastName: employee.lastName,
-      email: employee.email,
-      phone: employee.phone === '—' ? '' : employee.phone,
-      department: employee.department === '—' ? 'Technology' : employee.department,
-      designation: employee.designation === '—' ? '' : employee.designation,
-      joiningDate: employee.dateOfJoining === '—' ? '' : employee.dateOfJoining,
-      employmentType: employee.employmentType,
-      workLocation: employee.workLocation,
-      reportingManager: employee.reportingManager,
-      employmentStatus: employee.status,
-    });
-    setIsEditModalOpen(true);
+    navigate(`/admin/employees/${employeeId}/edit`);
   };
 
   const handleEditChange = (e) => {
@@ -395,7 +456,12 @@ function EmployeeDetails() {
           <div className="admin-summary-roles">
             <span className="admin-summary-designation">{employee.designation}</span>
             <span className="admin-summary-bullet">&bull;</span>
-            <span className="admin-summary-department">{employee.department}</span>
+            <span className="admin-summary-department">
+              {employee.department}
+              {employee.department && !['IT', 'Non-IT'].includes(employee.department) && (
+                <span style={{ marginLeft: '0.35rem', color: '#b45309', fontWeight: 600 }}> (Legacy)</span>
+              )}
+            </span>
           </div>
 
           <div className="admin-summary-contact-row">
@@ -479,7 +545,12 @@ function EmployeeDetails() {
 
             <div className="admin-info-field">
               <span className="admin-info-label">Department</span>
-              <span className="admin-info-value">{employee.department}</span>
+              <span className="admin-info-value">
+                {employee.department}
+                {employee.department && !['IT', 'Non-IT'].includes(employee.department) && (
+                  <span style={{ marginLeft: '0.4rem', color: '#b45309', fontWeight: 600, fontSize: '0.8125rem' }}> (Legacy)</span>
+                )}
+              </span>
             </div>
 
             <div className="admin-info-field">
@@ -748,6 +819,100 @@ function EmployeeDetails() {
       </div>
 
       {/* ====================================================================
+          SECTION 5B — SALARY BANK DETAILS
+          ==================================================================== */}
+      <section className="admin-card admin-bank-card" aria-labelledby="bank-heading" style={{ marginBottom: '1.5rem' }}>
+        <div className="admin-card-header">
+          <div>
+            <h2 id="bank-heading" className="admin-card-title">Salary Bank Details</h2>
+            <p className="admin-card-subtitle">Employee salary disbursement account & verification review</p>
+          </div>
+          {employee.bankDetails && (
+            <button
+              type="button"
+              className="admin-btn-secondary admin-btn-sm"
+              onClick={handleOpenBankVerifyModal}
+              id="admin-review-bank-btn"
+            >
+              Review / Verify Status &rarr;
+            </button>
+          )}
+        </div>
+
+        {employee.bankDetails ? (
+          <div className="admin-pf-stats-grid">
+            <div className="admin-pf-stat-box">
+              <span className="admin-pf-stat-label">Account Holder Name</span>
+              <span className="admin-pf-stat-val">{employee.bankDetails.accountHolderName}</span>
+            </div>
+
+            <div className="admin-pf-stat-box">
+              <span className="admin-pf-stat-label">Bank Name</span>
+              <span className="admin-pf-stat-val font-semibold">{employee.bankDetails.bankName}</span>
+            </div>
+
+            <div className="admin-pf-stat-box">
+              <span className="admin-pf-stat-label">Account Number</span>
+              {employee.bankDetails.accountNumberError ? (
+                <span className="admin-pf-stat-val font-mono" style={{ color: '#ef4444', fontSize: '0.875rem' }}>
+                  {employee.bankDetails.accountNumber}
+                </span>
+              ) : (
+                <span className="admin-pf-stat-val font-mono">{employee.bankDetails.accountNumber}</span>
+              )}
+            </div>
+
+            <div className="admin-pf-stat-box">
+              <span className="admin-pf-stat-label">IFSC Code</span>
+              <span className="admin-pf-stat-val font-mono uppercase">{employee.bankDetails.ifscCode}</span>
+            </div>
+
+            <div className="admin-pf-stat-box">
+              <span className="admin-pf-stat-label">Account Type</span>
+              <span className="admin-pf-stat-val">{employee.bankDetails.accountType}</span>
+            </div>
+
+            <div className="admin-pf-stat-box">
+              <span className="admin-pf-stat-label">Branch</span>
+              <span className="admin-pf-stat-val">
+                {[employee.bankDetails.branchName, employee.bankDetails.branchCity, employee.bankDetails.branchState]
+                  .filter((x) => x && x !== '—')
+                  .join(', ') || '—'}
+              </span>
+            </div>
+
+            <div className="admin-pf-stat-box admin-field-full">
+              <span className="admin-pf-stat-label">Verification Status</span>
+              <span className="admin-pf-stat-val">
+                <span
+                  className={`admin-status-badge ${
+                    employee.bankDetails.verificationStatus === 'Verified'
+                      ? 'status-active'
+                      : employee.bankDetails.verificationStatus === 'Rejected'
+                      ? 'status-inactive'
+                      : 'status-pending'
+                  }`}
+                >
+                  <span className="status-dot" aria-hidden="true"></span>
+                  {employee.bankDetails.verificationStatus}
+                </span>
+                {employee.bankDetails.adminRemarks && (
+                  <span style={{ marginLeft: '0.75rem', fontSize: '0.8125rem', color: '#64748b' }}>
+                    Remarks: {employee.bankDetails.adminRemarks}
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="text-muted" style={{ padding: '2rem 1rem', textAlign: 'center' }}>
+            No bank details submitted by this employee yet.
+          </div>
+        )}
+      </section>
+
+
+      {/* ====================================================================
           SECTION 6 — RECENT LEAVE REQUESTS
           ==================================================================== */}
       <section className="admin-card admin-recent-leaves-table-card" aria-labelledby="recent-leaves-heading">
@@ -991,11 +1156,11 @@ function EmployeeDetails() {
                     value={editForm.department}
                     onChange={handleEditChange}
                   >
-                    <option value="Technology">Technology</option>
-                    <option value="HR">HR</option>
-                    <option value="Finance">Finance</option>
-                    <option value="Operations">Operations</option>
-                    <option value="Sales">Sales</option>
+                    {editForm.department && !['IT', 'Non-IT'].includes(editForm.department) && (
+                      <option value={editForm.department}>{editForm.department} (Legacy)</option>
+                    )}
+                    <option value="IT">IT</option>
+                    <option value="Non-IT">Non-IT</option>
                   </select>
                 </div>
 
@@ -1314,8 +1479,98 @@ function EmployeeDetails() {
           </div>
         </div>
       )}
+
+      {/* BANK DETAILS VERIFICATION MODAL */}
+
+      {isBankVerifyModalOpen && employee.bankDetails && (
+        <div className="admin-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="bank-verify-modal-title">
+          <div className="admin-modal-container" style={{ maxWidth: '480px' }}>
+            <div className="admin-modal-header">
+              <h2 id="bank-verify-modal-title" className="admin-modal-title">Review Bank Details</h2>
+              <button
+                type="button"
+                className="admin-modal-close-btn"
+                onClick={() => setIsBankVerifyModalOpen(false)}
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleBankVerifySubmit}>
+              <div className="admin-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.25rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.8125rem', color: '#64748b', marginBottom: '0.25rem' }}>Employee</div>
+                  <div style={{ fontWeight: 600, color: '#0f172a' }}>{employee.name} ({employee.employeeId})</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.8125rem', color: '#64748b', marginBottom: '0.25rem' }}>Bank & Account Number</div>
+                  <div style={{ fontWeight: 600, color: '#0f172a' }}>
+                    {employee.bankDetails.bankName} &bull;{' '}
+                    <span
+                      className="font-mono"
+                      style={employee.bankDetails.accountNumberError ? { color: '#ef4444', fontSize: '0.875rem' } : {}}
+                    >
+                      {employee.bankDetails.accountNumber}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="verification_status" style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.375rem' }}>
+                    Verification Status *
+                  </label>
+                  <select
+                    id="verification_status"
+                    className="admin-edit-input"
+                    value={bankVerifyStatus}
+                    onChange={(e) => setBankVerifyStatus(e.target.value)}
+                  >
+                    <option value="Verified">Verified</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="admin_remarks" style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '0.375rem' }}>
+                    Admin Review Remarks
+                  </label>
+                  <textarea
+                    id="admin_remarks"
+                    className="admin-edit-input"
+                    rows="3"
+                    value={bankVerifyRemarks}
+                    onChange={(e) => setBankVerifyRemarks(e.target.value)}
+                    placeholder="Optional notes or rejection reasons"
+                  />
+                </div>
+              </div>
+
+              <div className="admin-modal-footer">
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary"
+                  onClick={() => setIsBankVerifyModalOpen(false)}
+                  disabled={submittingBankVerify}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-btn-primary"
+                  disabled={submittingBankVerify}
+                >
+                  {submittingBankVerify ? 'Saving...' : 'Save Verification'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
+
 }
 
 export default EmployeeDetails;

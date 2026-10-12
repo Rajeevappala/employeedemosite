@@ -25,7 +25,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "db:seed": "node database/seed.js"
+    "db:seed": "node database/seed.js",
+    "db:migrate": "node database/migrate_production.js",
+    "test": "node test_simplify_roles_and_deletion.js"
   },
   "keywords": [],
   "author": "",

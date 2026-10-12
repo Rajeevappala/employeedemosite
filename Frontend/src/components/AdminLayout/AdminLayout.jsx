@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import './AdminLayout.css';
 
@@ -145,24 +145,6 @@ const ADMIN_NAV_ITEMS = [
     ),
   },
   {
-    name: 'Announcements',
-    path: '/admin/announcements',
-    icon: (
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-      </svg>
-    ),
-  },
-  {
     name: 'Offboarding',
     path: '/admin/exit',
     icon: (
@@ -186,7 +168,9 @@ const ADMIN_NAV_ITEMS = [
 function AdminLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { logout } = useAuth();
+  const isSettingsActive = location.pathname.startsWith('/admin/settings');
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -225,14 +209,43 @@ function AdminLayout() {
         aria-hidden="true"
       />
 
-      {/* FIXED SIDEBAR (Full Viewport Height) */}
-      <aside
-        className={`admin-sidebar ${isSidebarOpen ? 'admin-sidebar-open' : ''}`}
-        aria-label="Admin Navigation"
-      >
-        {/* Sidebar Brand Header */}
-        <div className="admin-sidebar-brand-header">
-          <div className="admin-navbar-brand">
+      {/* FULL-WIDTH CONTINUOUS ADMIN HEADER */}
+      <header className="admin-navbar">
+        <div className="admin-navbar-left">
+          <button
+            type="button"
+            className="admin-hamburger-btn"
+            onClick={toggleSidebar}
+            aria-label={isSidebarOpen ? 'Close navigation drawer' : 'Open navigation drawer'}
+            aria-expanded={Boolean(isSidebarOpen)}
+          >
+            <svg
+              className="admin-hamburger-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              {isSidebarOpen ? (
+                <>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </>
+              ) : (
+                <>
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </>
+              )}
+            </svg>
+          </button>
+
+          {/* Admin Header Brand Display (Desktop & Mobile) */}
+          <div className="admin-header-brand">
             <div className="admin-navbar-logo-badge" aria-hidden="true">
               <svg
                 className="admin-navbar-logo-icon"
@@ -249,159 +262,51 @@ function AdminLayout() {
                 <path d="M14 15h4" />
               </svg>
             </div>
-            <div className="admin-brand-text-group">
-              <span className="admin-navbar-brand-text">GaintPro HRM</span>
-              <span className="admin-brand-portal-tag">Admin</span>
-            </div>
+            <span className="admin-navbar-brand-text">GaintPro HRM Portal</span>
+            <span className="admin-brand-portal-tag">ADMIN</span>
           </div>
-
-          {/* Close button for mobile drawer */}
-          <button
-            type="button"
-            className="admin-sidebar-close-btn"
-            onClick={closeSidebar}
-            aria-label="Close navigation drawer"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
         </div>
 
-        {/* Scrollable Navigation Links */}
-        <nav className="admin-sidebar-nav">
-          <ul className="admin-sidebar-nav-list">
-            {ADMIN_NAV_ITEMS.map((item) => (
-              <li key={item.path} className="admin-sidebar-nav-item-wrapper">
-                <NavLink
-                  to={item.path}
-                  onClick={closeSidebar}
-                  className={({ isActive }) =>
-                    `admin-sidebar-nav-item ${isActive ? 'admin-sidebar-nav-item-active' : ''}`
-                  }
-                >
-                  <span className="admin-sidebar-icon-wrapper">{item.icon}</span>
-                  <span className="admin-sidebar-label">{item.name}</span>
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        {/* Sidebar Footer with Settings & Logout */}
-        <div className="admin-sidebar-footer">
-          <button
-            type="button"
-            className="admin-sidebar-action-btn admin-settings-btn"
-            aria-label="Settings"
-          >
-            <span className="admin-sidebar-icon-wrapper">
+        <div className="admin-navbar-right">
+          {/* Admin Profile Section (Notification UI completely removed) */}
+          <div className="admin-navbar-user-profile">
+            <div className="admin-navbar-avatar" aria-hidden="true">
               <svg
+                className="admin-avatar-icon"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                aria-hidden="true"
               >
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                <path d="M12 2a5 5 0 1 0 5 5 5 5 0 0 0-5-5zm0 14c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z" />
               </svg>
-            </span>
-            <span className="admin-sidebar-label">Settings</span>
-          </button>
-
-          <button
-            type="button"
-            className="admin-sidebar-action-btn admin-logout-btn"
-            onClick={handleLogout}
-            aria-label="Logout"
-          >
-            <span className="admin-sidebar-icon-wrapper">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-            </span>
-            <span className="admin-sidebar-label">Logout</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* RIGHT PANE: Fixed Top Header + Scrollable Main Content */}
-      <div className="admin-right-pane">
-        {/* FIXED TOP HEADER */}
-        <header className="admin-navbar">
-          <div className="admin-navbar-left">
-            <button
-              type="button"
-              className="admin-hamburger-btn"
-              onClick={toggleSidebar}
-              aria-label={isSidebarOpen ? 'Close navigation drawer' : 'Open navigation drawer'}
-              aria-expanded={Boolean(isSidebarOpen)}
-            >
-              <svg
-                className="admin-hamburger-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                {isSidebarOpen ? (
-                  <>
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </>
-                ) : (
-                  <>
-                    <line x1="3" y1="6" x2="21" y2="6" />
-                    <line x1="3" y1="12" x2="21" y2="12" />
-                    <line x1="3" y1="18" x2="21" y2="18" />
-                  </>
-                )}
-              </svg>
-            </button>
-
-            {/* Mobile Header Brand Display */}
-            <div className="admin-navbar-mobile-brand">
-              <span className="admin-navbar-brand-text">GaintPro HRM</span>
-              <span className="admin-brand-portal-tag">Admin</span>
+            </div>
+            <div className="admin-navbar-user-details">
+              <span className="admin-navbar-name">Admin</span>
+              <span className="admin-navbar-role">Administrator</span>
             </div>
           </div>
+        </div>
+      </header>
 
-          <div className="admin-navbar-right">
-            {/* Notification Icon */}
+      {/* ADMIN BODY: SIDEBAR (BELOW HEADER) + MAIN CONTENT */}
+      <div className="admin-layout-body">
+        {/* SIDEBAR (Begins Below Header) */}
+        <aside
+          className={`admin-sidebar ${isSidebarOpen ? 'admin-sidebar-open' : ''}`}
+          aria-label="Admin Navigation"
+        >
+          {/* Mobile Drawer Header with Close Button (Hidden on Desktop) */}
+          <div className="admin-sidebar-mobile-header">
             <button
               type="button"
-              className="admin-navbar-icon-btn"
-              aria-label="Announcements & Notifications"
-              title="Announcements & Notifications"
-              onClick={() => navigate('/admin/announcements')}
+              className="admin-sidebar-close-btn"
+              onClick={closeSidebar}
+              aria-label="Close navigation drawer"
             >
               <svg
-                className="admin-navbar-icon"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -410,34 +315,82 @@ function AdminLayout() {
                 strokeLinejoin="round"
                 aria-hidden="true"
               >
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
-              <span className="admin-notification-badge-dot" aria-hidden="true"></span>
             </button>
+          </div>
 
-            {/* Admin Profile Section */}
-            <div className="admin-navbar-user-profile">
-              <div className="admin-navbar-avatar" aria-hidden="true">
+          {/* Navigation Links */}
+          <nav className="admin-sidebar-nav">
+            <ul className="admin-sidebar-nav-list">
+              {ADMIN_NAV_ITEMS.map((item) => (
+                <li key={item.path} className="admin-sidebar-nav-item-wrapper">
+                  <NavLink
+                    to={item.path}
+                    onClick={closeSidebar}
+                    className={({ isActive }) =>
+                      `admin-sidebar-nav-item ${isActive ? 'admin-sidebar-nav-item-active' : ''}`
+                    }
+                  >
+                    <span className="admin-sidebar-icon-wrapper">{item.icon}</span>
+                    <span className="admin-sidebar-label">{item.name}</span>
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </nav>
+
+          {/* Sidebar Footer with Settings & Logout */}
+          <div className="admin-sidebar-footer">
+            <NavLink
+              to="/admin/settings"
+              onClick={closeSidebar}
+              className={`admin-sidebar-action-btn admin-settings-btn ${isSettingsActive ? 'admin-sidebar-nav-item-active' : ''}`}
+              aria-label="Settings"
+            >
+              <span className="admin-sidebar-icon-wrapper">
                 <svg
-                  className="admin-avatar-icon"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
-                  <path d="M12 2a5 5 0 1 0 5 5 5 5 0 0 0-5-5zm0 14c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z" />
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                 </svg>
-              </div>
-              <div className="admin-navbar-user-details">
-                <span className="admin-navbar-name">Admin</span>
-                <span className="admin-navbar-role">Administrator</span>
-              </div>
-            </div>
+              </span>
+              <span className="admin-sidebar-label">Settings</span>
+            </NavLink>
+
+            <button
+              type="button"
+              className="admin-sidebar-action-btn admin-logout-btn"
+              onClick={handleLogout}
+              aria-label="Logout"
+            >
+              <span className="admin-sidebar-icon-wrapper">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+              </span>
+              <span className="admin-sidebar-label">Logout</span>
+            </button>
           </div>
-        </header>
+        </aside>
 
         {/* SCROLLABLE MAIN CONTENT */}
         <main className="admin-main-content">

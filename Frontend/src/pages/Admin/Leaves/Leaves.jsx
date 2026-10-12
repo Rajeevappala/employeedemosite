@@ -96,6 +96,7 @@ function Leaves() {
   const [toastMessage, setToastMessage] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
 
   // Prevent background scrolling when any modal is open
   useEffect(() => {
@@ -310,40 +311,50 @@ function Leaves() {
     }
   };
 
-  // Export report as CSV download
-  const handleExportReport = () => {
+  // Export report as Excel (.xlsx) download
+  const handleExportReport = async () => {
+    if (isExporting) return;
+    if (leaves.length === 0 && totalCount === 0) {
+      showToast('No leave records found for the selected filters.');
+      return;
+    }
+    setIsExporting(true);
+    showToast('Exporting leave report...');
     try {
-      if (leaves.length === 0) {
-        showToast('No leave requests to export.');
-        return;
+      const params = {};
+      if (searchQuery.trim()) {
+        params.search = searchQuery.trim();
       }
-      const headers = ['Request ID', 'Employee ID', 'Employee Name', 'Department', 'Leave Type', 'Start Date', 'End Date', 'Days', 'Requested On', 'Status', 'Admin Comment'];
-      const rows = leaves.map((r) => [
-        `"${r.id}"`,
-        `"${r.employeeId}"`,
-        `"${r.employeeName}"`,
-        `"${r.department}"`,
-        `"${r.leaveType}"`,
-        `"${r.startDate}"`,
-        `"${r.endDate}"`,
-        r.days,
-        `"${r.requestedOn}"`,
-        `"${r.status}"`,
-        `"${(r.adminComment || '').replace(/"/g, '""')}"`,
-      ]);
-      const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
+      if (selectedStatus !== 'All') {
+        params.status = selectedStatus;
+      }
+      if (selectedType !== 'All') {
+        params.leave_type = selectedType;
+      }
+      if (selectedDept !== 'All') {
+        params.department = selectedDept;
+      }
+      const month = getMonthParam(selectedDateFilter);
+      if (month) {
+        params.month = month;
+      }
+
+      const blob = await api.admin.exportLeaves(params);
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `leave_report_${new Date().toISOString().substring(0, 10)}.csv`);
+      link.href = url;
+      const todayStr = new Date().toISOString().substring(0, 10);
+      link.download = `leave_report_${todayStr}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      showToast('Leave Report exported successfully.');
-    } catch {
-      showToast('Failed to export leave report.');
+      window.URL.revokeObjectURL(url);
+      showToast('Leave report exported successfully.');
+    } catch (err) {
+      console.error('Failed to export leave report:', err);
+      showToast('Unable to export leave report. Please try again.');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -365,6 +376,7 @@ function Leaves() {
             type="button"
             className="admin-btn admin-btn-secondary"
             onClick={handleExportReport}
+            disabled={isExporting}
             aria-label="Export Leave Report"
           >
             <svg
@@ -381,7 +393,7 @@ function Leaves() {
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-            <span>Export Leave Report</span>
+            <span>{isExporting ? 'Exporting...' : 'Export Leave Report'}</span>
           </button>
         </div>
       </header>
@@ -468,48 +480,53 @@ function Leaves() {
       {/* ====================================================================
           FILTERS & SEARCH
           ==================================================================== */}
-      <section className="admin-filters-card" aria-label="Search and Filter Leave Requests">
-        <div className="admin-search-wrapper">
-          <svg
-            className="admin-search-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            type="text"
-            className="admin-search-input"
-            placeholder="Search employee, ID or leave type..."
-            value={searchQuery}
-            onChange={handleSearchChange}
-            aria-label="Search leave requests"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              className="admin-search-clear-btn"
-              onClick={() => {
-                setSearchQuery('');
-                setCurrentPage(1);
-              }}
-              aria-label="Clear search query"
-            >
-              &times;
-            </button>
-          )}
-        </div>
+      <section className="admin-filters-card admin-leaves-filters-card" aria-label="Search and Filter Leave Requests">
+        <div className="admin-leaves-filters-grid">
+          {/* Employee ID / Search Filter */}
+          <div className="admin-filter-group admin-filter-group-employee">
+            <label htmlFor="leaveEmployeeSearch" className="admin-filter-label">Employee ID</label>
+            <div className="admin-search-wrapper">
+              <svg
+                className="admin-search-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                id="leaveEmployeeSearch"
+                type="text"
+                className="admin-search-input"
+                placeholder="Search ID, name..."
+                value={searchQuery}
+                onChange={handleSearchChange}
+                aria-label="Search employee ID or name"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="admin-search-clear-btn"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setCurrentPage(1);
+                  }}
+                  aria-label="Clear search query"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+          </div>
 
-        <div className="admin-filter-controls">
           {/* Status Filter */}
           <div className="admin-filter-group">
-            <label htmlFor="leaveStatusFilter" className="admin-filter-label">Status:</label>
+            <label htmlFor="leaveStatusFilter" className="admin-filter-label">Status</label>
             <select
               id="leaveStatusFilter"
               className="admin-filter-select"
@@ -526,7 +543,7 @@ function Leaves() {
 
           {/* Leave Type Filter */}
           <div className="admin-filter-group">
-            <label htmlFor="leaveTypeFilter" className="admin-filter-label">Type:</label>
+            <label htmlFor="leaveTypeFilter" className="admin-filter-label">Type</label>
             <select
               id="leaveTypeFilter"
               className="admin-filter-select"
@@ -542,7 +559,7 @@ function Leaves() {
 
           {/* Department Filter */}
           <div className="admin-filter-group">
-            <label htmlFor="leaveDeptFilter" className="admin-filter-label">Department:</label>
+            <label htmlFor="leaveDeptFilter" className="admin-filter-label">Department</label>
             <select
               id="leaveDeptFilter"
               className="admin-filter-select"
@@ -550,18 +567,14 @@ function Leaves() {
               onChange={handleDeptChange}
             >
               <option value="All">All Departments</option>
-              <option value="Engineering">Engineering</option>
-              <option value="Technology">Technology</option>
-              <option value="HR">HR</option>
-              <option value="Finance">Finance</option>
-              <option value="Operations">Operations</option>
-              <option value="Sales">Sales</option>
+              <option value="IT">IT</option>
+              <option value="Non-IT">Non-IT</option>
             </select>
           </div>
 
           {/* Date Filter */}
           <div className="admin-filter-group">
-            <label htmlFor="leaveDateFilter" className="admin-filter-label">Date:</label>
+            <label htmlFor="leaveDateFilter" className="admin-filter-label">Date</label>
             <select
               id="leaveDateFilter"
               className="admin-filter-select"
@@ -595,11 +608,10 @@ function Leaves() {
           )}
         </div>
 
-        <div className="admin-table-container">
+        <div className="leave-table-wrapper admin-table-container">
           <table className="admin-table">
             <thead>
               <tr>
-                <th scope="col">Request ID</th>
                 <th scope="col">Employee</th>
                 <th scope="col">Employee ID</th>
                 <th scope="col">Leave Type</th>
@@ -614,7 +626,7 @@ function Leaves() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="10" className="admin-empty-table-cell">
+                  <td colSpan="9" className="admin-empty-table-cell">
                     <div className="admin-empty-state">
                       <p className="admin-empty-title">Loading leave requests...</p>
                     </div>
@@ -622,7 +634,7 @@ function Leaves() {
                 </tr>
               ) : error ? (
                 <tr>
-                  <td colSpan="10" className="admin-empty-table-cell">
+                  <td colSpan="9" className="admin-empty-table-cell">
                     <div className="admin-empty-state">
                       <p className="admin-empty-title" style={{ color: '#dc2626' }}>
                         {error}
@@ -646,10 +658,6 @@ function Leaves() {
 
                   return (
                     <tr key={req.id}>
-                      {/* Request ID */}
-                      <td>
-                        <span className="admin-id-badge">{req.id}</span>
-                      </td>
 
                       {/* Employee Name (Clickable link) */}
                       <td>
@@ -834,7 +842,7 @@ function Leaves() {
           <span className="admin-badge admin-badge-neutral">Annual Quota 2026</span>
         </div>
 
-        <div className="admin-table-container">
+        <div className="leave-table-wrapper admin-table-container">
           <table className="admin-table">
             <thead>
               <tr>
@@ -1146,7 +1154,7 @@ function Leaves() {
                 <div>
                   <h2 className="admin-modal-title">Leave Request Details</h2>
                   <span className="admin-doc-modal-subtitle">
-                    Request ID: {viewRequest.id}
+                    {viewRequest.employeeName} &bull; {viewRequest.employeeId}
                   </span>
                 </div>
               </div>
@@ -1164,22 +1172,22 @@ function Leaves() {
             <div className="admin-modal-body admin-pf-modal-body">
               <div className="admin-doc-metadata-grid">
                 <div className="admin-doc-meta-item">
-                  <span className="doc-meta-lbl">Request ID</span>
-                  <span className="doc-meta-val font-mono">{viewRequest.id}</span>
-                </div>
-
-                <div className="admin-doc-meta-item">
                   <span className="doc-meta-lbl">Employee</span>
                   <button
                     type="button"
-                    className="doc-meta-emp-link"
+                    className="doc-meta-emp-link font-semibold"
                     onClick={() => {
                       setViewRequest(null);
                       navigate(`/admin/employees/${viewRequest.employeeId}`);
                     }}
                   >
-                    {viewRequest.employeeName} ({viewRequest.employeeId})
+                    {viewRequest.employeeName}
                   </button>
+                </div>
+
+                <div className="admin-doc-meta-item">
+                  <span className="doc-meta-lbl">Employee ID</span>
+                  <span className="doc-meta-val font-semibold">{viewRequest.employeeId}</span>
                 </div>
 
                 <div className="admin-doc-meta-item">

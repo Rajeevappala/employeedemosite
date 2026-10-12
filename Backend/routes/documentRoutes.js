@@ -24,38 +24,38 @@ router.get(
 );
 
 // GET /admin/documents
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN
+// Strictly protected: requires valid JWT session and role ADMIN
 router.get(
   '/admin/documents',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   documentController.getAdminDocuments
 );
 
 // GET /admin/documents/:documentId/download
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN
+// Strictly protected: requires valid JWT session and role ADMIN
 router.get(
   '/admin/documents/:documentId/download',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   documentController.downloadAdminDocument
 );
 
 // DELETE /admin/documents/:documentId
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN
+// Strictly protected: requires valid JWT session and role ADMIN
 router.delete(
   '/admin/documents/:documentId',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   documentController.deleteAdminDocument
 );
 
 // POST /admin/documents
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN
+// Strictly protected: requires valid JWT session and role ADMIN
 router.post(
   '/admin/documents',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   uploadSingleDocument,
   documentController.uploadDocument
 );

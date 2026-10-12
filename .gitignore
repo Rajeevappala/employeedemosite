@@ -1,0 +1,56 @@
+# ==============================================================================
+# GaintPro HRM Portal - Root .gitignore
+# ==============================================================================
+
+# Environment files and credentials
+.env
+.env.*
+.env.local
+.env.*.local
+!.env.example
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Production and build outputs
+dist/
+dist-ssr/
+build/
+**/dist/
+**/build/
+
+# Private Document Storage & File Uploads
+storage/
+**/storage/
+Backend/storage/private/
+uploads/
+**/uploads/
+
+# Scratch & temporary testing directories
+scratch/
+*.tmp
+*.temp
+
+# Logs and debugging
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.sw?
+*.bak

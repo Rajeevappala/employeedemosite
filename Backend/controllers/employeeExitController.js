@@ -126,7 +126,7 @@ const applyResignation = async (req, res, next) => {
     // Audit log
     recordAuditLog({
       userId,
-      action: 'EXIT_REQUEST_SUBMITTED',
+      action: 'RESIGNATION_SUBMITTED',
       entityType: 'EXIT_REQUEST',
       entityId: exitRequest.id,
       metadata: {
@@ -214,12 +214,42 @@ const getExitStatus = async (req, res, next) => {
       settlement = fnfResult.rows[0] || null;
     }
 
+    // Fetch exit documents (if approved or completed)
+    let exitDocuments = [];
+    if (['APPROVED', 'COMPLETED'].includes(exitRequest.status)) {
+      const docsRes = await pool.query(
+        `SELECT id, document_type, file_name, TO_CHAR(release_date, 'YYYY-MM-DD') AS release_date, created_at, updated_at
+         FROM public.documents
+         WHERE employee_id = $1 AND is_active = TRUE AND (
+           exit_request_id = $2 OR document_type IN ('Relieving Letter', 'Experience Certificate', 'FnF Statement', 'Full & Final Settlement Statement', 'Other Exit Document')
+         )
+         ORDER BY created_at DESC`,
+        [employeeId, exitRequest.id]
+      );
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      exitDocuments = docsRes.rows.map((d) => {
+        const relStr = d.release_date;
+        const isAvail = !relStr || todayStr >= relStr;
+        return {
+          id: d.id,
+          document_type: d.document_type,
+          file_name: d.file_name,
+          release_date: relStr,
+          is_available: isAvail,
+          status: isAvail ? 'AVAILABLE' : 'SCHEDULED',
+          created_at: d.created_at,
+        };
+      });
+    }
+
     return res.status(200).json({
       success: true,
       data: {
         exitRequest,
         clearances: clrResult.rows,
         settlement,
+        exitDocuments,
       },
     });
   } catch (error) {
@@ -296,9 +326,9 @@ const withdrawResignation = async (req, res, next) => {
 };
 
 /**
- * Helper to stream employee-owned exit document safely.
+ * Helper to stream employee-owned exit document safely with strict release-date security.
  */
-async function streamEmployeeExitDocument(req, res, next, documentType) {
+async function streamEmployeeExitDocument(req, res, next, documentType, isInline = false) {
   try {
     const employeeId = req.user?.employee_id;
 
@@ -309,11 +339,11 @@ async function streamEmployeeExitDocument(req, res, next, documentType) {
       });
     }
 
-    // Ensure exit request is completed
+    // Ensure exit request is approved or completed
     const reqRes = await pool.query(
       `SELECT id, status FROM public.exit_requests
-       WHERE employee_id = $1 AND status = 'COMPLETED'
-       ORDER BY completed_at DESC
+       WHERE employee_id = $1 AND status IN ('APPROVED', 'COMPLETED')
+       ORDER BY created_at DESC
        LIMIT 1`,
       [employeeId]
     );
@@ -321,15 +351,15 @@ async function streamEmployeeExitDocument(req, res, next, documentType) {
     if (reqRes.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'No finalized exit records found.',
+        message: 'No approved or completed exit records found.',
       });
     }
 
-    // Look up document registered in public.documents
+    // Look up active document registered in public.documents
     const docRes = await pool.query(
-      `SELECT id, file_name, storage_key
+      `SELECT id, file_name, storage_key, TO_CHAR(release_date, 'YYYY-MM-DD') AS release_date
        FROM public.documents
-       WHERE employee_id = $1 AND document_type = $2
+       WHERE employee_id = $1 AND document_type = $2 AND is_active = TRUE
        ORDER BY created_at DESC
        LIMIT 1`,
       [employeeId, documentType]
@@ -343,10 +373,100 @@ async function streamEmployeeExitDocument(req, res, next, documentType) {
       });
     }
 
+    // BACKEND RELEASE-DATE SECURITY (Part 16 & 17)
+    // Server must enforce CURRENT_DATE >= document.release_date
+    if (doc.release_date) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const relDateStr = doc.release_date;
+      if (todayStr < relDateStr) {
+        const parts = relDateStr.split('-');
+        const dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        const formattedDate = dateObj.toLocaleDateString('en-GB', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        });
+        return res.status(403).json({
+          success: false,
+          message: `Document is not available until ${formattedDate}.`,
+          release_date: relDateStr,
+        });
+      }
+    }
+
     const fileBuffer = await storageService.getFile(doc.storage_key);
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${doc.file_name}"`);
+    res.setHeader('Content-Disposition', `${isInline ? 'inline' : 'attachment'}; filename="${doc.file_name}"`);
+    res.setHeader('Content-Length', fileBuffer.length);
+    return res.send(fileBuffer);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Handles employee access to an exit document by its document ID with strict release-date security.
+ */
+async function handleEmployeeExitDocumentAccess(req, res, next, isInline = false) {
+  try {
+    const employeeId = req.user?.employee_id;
+    const { documentId } = req.params;
+
+    if (!employeeId) {
+      return res.status(403).json({
+        success: false,
+        message: 'No employee profile associated with this account.',
+      });
+    }
+
+    if (!documentId || !UUID_REGEX.test(documentId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid document ID.',
+      });
+    }
+
+    const docRes = await pool.query(
+      `SELECT id, employee_id, document_type, file_name, storage_key,
+              TO_CHAR(release_date, 'YYYY-MM-DD') AS release_date
+       FROM public.documents
+       WHERE id = $1 AND employee_id = $2 AND is_active = TRUE`,
+      [documentId, employeeId]
+    );
+
+    const doc = docRes.rows[0];
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found.',
+      });
+    }
+
+    // BACKEND RELEASE-DATE SECURITY (Part 16 & 17)
+    if (doc.release_date) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const relDateStr = doc.release_date;
+      if (todayStr < relDateStr) {
+        const parts = relDateStr.split('-');
+        const dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        const formattedDate = dateObj.toLocaleDateString('en-GB', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        });
+        return res.status(403).json({
+          success: false,
+          message: `Document is not available until ${formattedDate}.`,
+          release_date: relDateStr,
+        });
+      }
+    }
+
+    const fileBuffer = await storageService.getFile(doc.storage_key);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${isInline ? 'inline' : 'attachment'}; filename="${doc.file_name}"`);
     res.setHeader('Content-Length', fileBuffer.length);
     return res.send(fileBuffer);
   } catch (error) {
@@ -355,13 +475,19 @@ async function streamEmployeeExitDocument(req, res, next, documentType) {
 }
 
 const downloadRelievingLetter = (req, res, next) =>
-  streamEmployeeExitDocument(req, res, next, 'Relieving Letter');
+  streamEmployeeExitDocument(req, res, next, 'Relieving Letter', false);
 
 const downloadExperienceCertificate = (req, res, next) =>
-  streamEmployeeExitDocument(req, res, next, 'Experience Certificate');
+  streamEmployeeExitDocument(req, res, next, 'Experience Certificate', false);
 
 const downloadFnfStatement = (req, res, next) =>
-  streamEmployeeExitDocument(req, res, next, 'FnF Statement');
+  streamEmployeeExitDocument(req, res, next, 'FnF Statement', false);
+
+const downloadExitDocumentById = (req, res, next) =>
+  handleEmployeeExitDocumentAccess(req, res, next, false);
+
+const viewExitDocumentById = (req, res, next) =>
+  handleEmployeeExitDocumentAccess(req, res, next, true);
 
 module.exports = {
   applyResignation,
@@ -370,4 +496,6 @@ module.exports = {
   downloadRelievingLetter,
   downloadExperienceCertificate,
   downloadFnfStatement,
+  downloadExitDocumentById,
+  viewExitDocumentById,
 };

@@ -6,8 +6,8 @@ const { authenticateToken, requireRole } = require('../middleware/authMiddleware
 const { uploadSingleExcel, uploadSinglePayslipPdf } = require('../middleware/uploadMiddleware');
 const { excelImportLimiter, fileUploadLimiter } = require('../middleware/rateLimitMiddleware');
 
-// All admin payroll routes require valid JWT session and role ADMIN or SUPER_ADMIN.
-router.use(authenticateToken, requireRole('ADMIN', 'SUPER_ADMIN'));
+// All admin payroll routes require valid JWT session and role ADMIN.
+router.use(authenticateToken, requireRole('ADMIN'));
 
 // =============================================================================
 // Monthly Payslips Management

@@ -1,6 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import api from '../../../services/api';
-import { useAuth } from '../../../context/AuthContext';
 import './EmployeeOnboardingModal.css';
 
 const INITIAL_WIZARD_DATA = {
@@ -26,7 +25,7 @@ const INITIAL_WIZARD_DATA = {
 
   // Step 3: Employment Details
   designation: '',
-  department: 'Technology',
+  department: 'IT',
   dateOfJoining: new Date().toISOString().split('T')[0],
   employmentType: 'Full Time',
   reportingManager: '',
@@ -40,7 +39,19 @@ const INITIAL_WIZARD_DATA = {
   pfNumber: '',
   pensionNumber: '',
 
-  // Step 5: Salary & Payroll
+  // Step 5: Bank Details
+  bankNotAvailable: false,
+  bankAccountHolderName: '',
+  bankName: 'IDFC Bank',
+  bankAccountNumber: '',
+  bankConfirmAccountNumber: '',
+  bankIfscCode: '',
+  bankBranchName: '',
+  bankBranchCity: '',
+  bankBranchState: '',
+  bankAccountType: 'Savings',
+
+  // Step 6: Salary & Payroll
   basicSalary: '40000',
   hra: '16000',
   allowances: '8000',
@@ -48,12 +59,12 @@ const INITIAL_WIZARD_DATA = {
   professionalTax: '200',
   otherDeductions: '0',
 
-  // Step 6: Leave Setup
+  // Step 7: Leave Setup
   paidLeave: '12',
   sickLeave: '10',
   unpaidLeave: '0',
 
-  // Step 7: Documents
+  // Step 8: Documents
   offerLetter: null,
   appointmentLetter: null,
   aadhaarCard: null,
@@ -68,61 +79,107 @@ const STEPS = [
   { number: 2, label: 'Personal' },
   { number: 3, label: 'Employment' },
   { number: 4, label: 'PF Details' },
-  { number: 5, label: 'Salary' },
-  { number: 6, label: 'Leaves' },
-  { number: 7, label: 'Documents' },
-  { number: 8, label: 'Review' },
+  { number: 5, label: 'Bank Details' },
+  { number: 6, label: 'Salary' },
+  { number: 7, label: 'Leaves' },
+  { number: 8, label: 'Documents' },
+  { number: 9, label: 'Review' },
 ];
 
 function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
-  const { user: currentUser } = useAuth();
   const [userType, setUserType] = useState('Employee');
   const [adminForm, setAdminForm] = useState({
+    adminId: '',
     firstName: '',
     lastName: '',
     email: '',
     phone: '',
   });
+  const [adminFieldErrors, setAdminFieldErrors] = useState({});
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState(INITIAL_WIZARD_DATA);
   const [stepError, setStepError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const [masterOptions, setMasterOptions] = useState({
+    departments: ['IT', 'Non-IT'],
+    designations: ['Senior Tech Lead', 'Python Developer', 'Software Engineer', 'Product Manager', 'QA Engineer', 'HR Manager'],
+    employmentTypes: ['Full Time', 'Part Time', 'Contract', 'Intern'],
+    locations: ['Hyderabad', 'Hyderabad HQ', 'Bangalore', 'Mumbai', 'Pune', 'Remote'],
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    api.admin.settings.employees.get()
+      .then((res) => {
+        if (isMounted && res?.success && res.data) {
+          const depts = (res.data.departments || []).filter((d) => d.is_active).map((d) => d.name);
+          const desigs = (res.data.designations || []).filter((d) => d.is_active).map((d) => d.name);
+          const empTypes = (res.data.employmentTypes || []).filter((e) => e.is_active).map((e) => e.name);
+          const locs = (res.data.locations || []).filter((l) => l.is_active).map((l) => l.name);
+
+          setMasterOptions((prev) => ({
+            departments: depts.length > 0 ? depts : prev.departments,
+            designations: desigs.length > 0 ? desigs : prev.designations,
+            employmentTypes: empTypes.length > 0 ? empTypes : prev.employmentTypes,
+            locations: locs.length > 0 ? locs : prev.locations,
+          }));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleAdminChange = (e) => {
     const { name, value } = e.target;
     setStepError('');
+    setAdminFieldErrors((prev) => ({ ...prev, [name]: '' }));
     setAdminForm((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: name === 'adminId' ? value.toUpperCase() : value,
     }));
   };
 
   const handleCreateAdmin = async (e) => {
     if (e) e.preventDefault();
     setStepError('');
+    const errors = {};
+
+    const trimmedAdminId = (adminForm.adminId || '').trim().toUpperCase();
+    if (!trimmedAdminId) {
+      errors.adminId = 'Admin ID Number is required.';
+    } else if (trimmedAdminId.length < 2 || trimmedAdminId.length > 30) {
+      errors.adminId = 'Admin ID Number must be between 2 and 30 characters.';
+    } else if (!/^[A-Z0-9\-_/]+$/.test(trimmedAdminId)) {
+      errors.adminId = 'Admin ID Number may only contain letters, numbers, hyphens, slashes, and underscores.';
+    }
 
     if (!adminForm.firstName.trim()) {
-      setStepError('First name is required.');
-      return;
+      errors.firstName = 'First name is required.';
     }
     if (!adminForm.lastName.trim()) {
-      setStepError('Last name is required.');
-      return;
+      errors.lastName = 'Last name is required.';
     }
     if (!adminForm.email.trim()) {
-      setStepError('Email address is required.');
-      return;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(adminForm.email.trim().toLowerCase())) {
-      setStepError('Invalid email address format.');
-      return;
+      errors.email = 'Email address is required.';
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(adminForm.email.trim().toLowerCase())) {
+        errors.email = 'Invalid email address format.';
+      }
     }
     if (adminForm.phone && adminForm.phone.trim()) {
       if (!/^[0-9+()\- ]{7,20}$/.test(adminForm.phone.trim())) {
-        setStepError('Invalid phone number format.');
-        return;
+        errors.phone = 'Invalid phone number format.';
       }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setAdminFieldErrors(errors);
+      setStepError('Please correct the validation errors below.');
+      return;
     }
 
     setSubmitting(true);
@@ -130,6 +187,7 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
       const res = await api.admin.createUser({
         role: 'ADMIN',
         userType: 'Admin',
+        adminId: trimmedAdminId,
         firstName: adminForm.firstName.trim(),
         lastName: adminForm.lastName.trim(),
         email: adminForm.email.trim().toLowerCase(),
@@ -143,7 +201,13 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
         setStepError(res?.message || 'Failed to create administrator account.');
       }
     } catch (err) {
-      setStepError(err.message || 'An error occurred while creating administrator.');
+      const errMsg = err.message || 'An error occurred while creating administrator.';
+      setStepError(errMsg);
+      if (errMsg.toLowerCase().includes('admin id')) {
+        setAdminFieldErrors((prev) => ({ ...prev, adminId: errMsg }));
+      } else if (errMsg.toLowerCase().includes('email')) {
+        setAdminFieldErrors((prev) => ({ ...prev, email: errMsg }));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -177,6 +241,12 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
   ]);
 
   if (!isOpen) return null;
+
+  const bankAccTrimmed = (formData.bankAccountNumber || '').trim();
+  const bankConfirmTrimmed = (formData.bankConfirmAccountNumber || '').trim();
+  const isBankMismatch = !formData.bankNotAvailable &&
+    Boolean(bankConfirmTrimmed) &&
+    bankAccTrimmed !== bankConfirmTrimmed;
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -344,6 +414,44 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
     }
 
     if (stepNumber === 5) {
+      if (!formData.bankNotAvailable) {
+        if (!formData.bankAccountHolderName.trim()) {
+          setStepError('Account holder name is required.');
+          return false;
+        }
+        if (!formData.bankAccountNumber.trim()) {
+          setStepError('Account number is required.');
+          return false;
+        }
+        if (!/^\d{9,18}$/.test(formData.bankAccountNumber.trim())) {
+          setStepError('Invalid account number. Account number must contain 9 to 18 digits.');
+          return false;
+        }
+        if (!formData.bankConfirmAccountNumber.trim()) {
+          setStepError('Please confirm the account number.');
+          return false;
+        }
+        if (formData.bankAccountNumber.trim() !== formData.bankConfirmAccountNumber.trim()) {
+          setStepError('Account numbers do not match. Please verify and re-enter.');
+          return false;
+        }
+        if (!formData.bankIfscCode.trim()) {
+          setStepError('IFSC code is required.');
+          return false;
+        }
+        if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData.bankIfscCode.trim().toUpperCase())) {
+          setStepError('Invalid IFSC code format (e.g., IDFB0001234).');
+          return false;
+        }
+        if (!['Savings', 'Current', 'Salary'].includes(formData.bankAccountType)) {
+          setStepError('Account type must be Savings, Current, or Salary.');
+          return false;
+        }
+      }
+      return true;
+    }
+
+    if (stepNumber === 6) {
       const basic = parseFloat(formData.basicSalary);
       const hra = parseFloat(formData.hra);
       const allowances = parseFloat(formData.allowances);
@@ -378,7 +486,7 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
       return true;
     }
 
-    if (stepNumber === 6) {
+    if (stepNumber === 7) {
       const pl = parseFloat(formData.paidLeave);
       const sl = parseFloat(formData.sickLeave);
       const upl = parseFloat(formData.unpaidLeave);
@@ -403,7 +511,16 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
 
   const handleNext = () => {
     if (validateStep(currentStep)) {
-      setCurrentStep((prev) => Math.min(prev + 1, 8));
+      if (currentStep === 4 && !formData.bankAccountHolderName) {
+        const autoHolder = `${formData.firstName || ''} ${formData.lastName || ''}`.trim();
+        if (autoHolder) {
+          setFormData((prev) => ({
+            ...prev,
+            bankAccountHolderName: autoHolder,
+          }));
+        }
+      }
+      setCurrentStep((prev) => Math.min(prev + 1, 9));
     }
   };
 
@@ -419,8 +536,8 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
 
   // Submit complete onboarding
   const handleSubmit = async () => {
-    // Final verification across all steps
-    for (let s = 1; s <= 6; s++) {
+    // Final verification across all steps (steps 1 through 7)
+    for (let s = 1; s <= 7; s++) {
       if (!validateStep(s)) {
         setCurrentStep(s);
         return;
@@ -478,7 +595,21 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
         payload.append('pension_number', formData.pensionNumber.trim());
       }
 
-      // Step 5
+      // Step 5: Bank Details
+      payload.append('bankNotAvailable', formData.bankNotAvailable ? 'true' : 'false');
+      if (!formData.bankNotAvailable) {
+        payload.append('bank_account_holder_name', formData.bankAccountHolderName.trim());
+        payload.append('bank_name', formData.bankName.trim() || 'IDFC Bank');
+        payload.append('bank_account_number', formData.bankAccountNumber.trim());
+        payload.append('bank_confirm_account_number', formData.bankConfirmAccountNumber.trim());
+        payload.append('bank_ifsc_code', formData.bankIfscCode.trim().toUpperCase());
+        if (formData.bankBranchName.trim()) payload.append('bank_branch_name', formData.bankBranchName.trim());
+        if (formData.bankBranchCity.trim()) payload.append('bank_branch_city', formData.bankBranchCity.trim());
+        if (formData.bankBranchState.trim()) payload.append('bank_branch_state', formData.bankBranchState.trim());
+        payload.append('bank_account_type', formData.bankAccountType);
+      }
+
+      // Step 6: Salary
       payload.append('basic_salary', formData.basicSalary);
       payload.append('hra', formData.hra);
       payload.append('allowances', formData.allowances);
@@ -486,12 +617,12 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
       payload.append('professional_tax', formData.professionalTax);
       payload.append('other_deductions', formData.otherDeductions);
 
-      // Step 6
+      // Step 7: Leaves
       payload.append('paid_leave', formData.paidLeave);
       payload.append('sick_leave', formData.sickLeave);
       payload.append('unpaid_leave', formData.unpaidLeave);
 
-      // Step 7
+      // Step 8: Documents
       if (formData.offerLetter) payload.append('offer_letter', formData.offerLetter);
       if (formData.appointmentLetter) payload.append('appointment_letter', formData.appointmentLetter);
       if (formData.aadhaarCard) payload.append('aadhaar_card', formData.aadhaarCard);
@@ -578,7 +709,7 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
           >
             <option value="">Select user type</option>
             <option value="Employee">Employee</option>
-            {currentUser?.role === 'SUPER_ADMIN' && <option value="Admin">Admin</option>}
+            <option value="Admin">Admin</option>
           </select>
         </div>
 
@@ -630,6 +761,32 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                 Provide administrator credentials. Administrators manage employee records and access the portal securely using OTP.
               </p>
               <div className="wizard-form-grid">
+                <div className="wizard-field-group wizard-field-full">
+                  <label htmlFor="adminId" className="wizard-field-label">
+                    Admin ID Number <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="adminId"
+                    name="adminId"
+                    className="wizard-field-input"
+                    placeholder="e.g. ADM0001"
+                    value={adminForm.adminId}
+                    onChange={handleAdminChange}
+                    maxLength={30}
+                    autoComplete="off"
+                    style={adminFieldErrors.adminId ? { borderColor: '#ef4444' } : {}}
+                  />
+                  {adminFieldErrors.adminId && (
+                    <span style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                      {adminFieldErrors.adminId}
+                    </span>
+                  )}
+                  <small style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                    Unique administrator ID number (letters, numbers, hyphens, slashes, and underscores).
+                  </small>
+                </div>
+
                 <div className="wizard-field-group">
                   <label htmlFor="adminFirstName" className="wizard-field-label">
                     First Name <span style={{ color: '#ef4444' }}>*</span>
@@ -643,7 +800,13 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                     value={adminForm.firstName}
                     onChange={handleAdminChange}
                     maxLength={50}
+                    style={adminFieldErrors.firstName ? { borderColor: '#ef4444' } : {}}
                   />
+                  {adminFieldErrors.firstName && (
+                    <span style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                      {adminFieldErrors.firstName}
+                    </span>
+                  )}
                 </div>
 
                 <div className="wizard-field-group">
@@ -659,22 +822,34 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                     value={adminForm.lastName}
                     onChange={handleAdminChange}
                     maxLength={50}
+                    style={adminFieldErrors.lastName ? { borderColor: '#ef4444' } : {}}
                   />
+                  {adminFieldErrors.lastName && (
+                    <span style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                      {adminFieldErrors.lastName}
+                    </span>
+                  )}
                 </div>
 
                 <div className="wizard-field-group wizard-field-full">
                   <label htmlFor="adminEmail" className="wizard-field-label">
-                    Email <span style={{ color: '#ef4444' }}>*</span>
+                    Email Address <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <input
                     type="email"
                     id="adminEmail"
                     name="email"
                     className="wizard-field-input"
-                    placeholder="Enter email"
+                    placeholder="Enter email address"
                     value={adminForm.email}
                     onChange={handleAdminChange}
+                    style={adminFieldErrors.email ? { borderColor: '#ef4444' } : {}}
                   />
+                  {adminFieldErrors.email && (
+                    <span style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                      {adminFieldErrors.email}
+                    </span>
+                  )}
                 </div>
 
                 <div className="wizard-field-group">
@@ -689,7 +864,13 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                     placeholder="Enter phone number"
                     value={adminForm.phone}
                     onChange={handleAdminChange}
+                    style={adminFieldErrors.phone ? { borderColor: '#ef4444' } : {}}
                   />
+                  {adminFieldErrors.phone && (
+                    <span style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                      {adminFieldErrors.phone}
+                    </span>
+                  )}
                 </div>
 
                 <div className="wizard-field-group">
@@ -1053,17 +1234,23 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                   <label htmlFor="designation" className="wizard-field-label">
                     Designation <span className="required">*</span>
                   </label>
-                  <input
+                  <select
                     id="designation"
                     name="designation"
-                    type="text"
                     required
                     aria-required="true"
-                    className="wizard-field-input"
+                    className="wizard-field-select"
                     value={formData.designation}
                     onChange={handleChange}
-                    placeholder="Enter designation"
-                  />
+                  >
+                    <option value="">Select Designation</option>
+                    {masterOptions.designations.map((desig) => (
+                      <option key={desig} value={desig}>{desig}</option>
+                    ))}
+                    {formData.designation && !masterOptions.designations.includes(formData.designation) && (
+                      <option value={formData.designation}>{formData.designation}</option>
+                    )}
+                  </select>
                 </div>
 
                 {/* Department (Required) */}
@@ -1080,12 +1267,9 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                     value={formData.department}
                     onChange={handleChange}
                   >
-                    <option value="Technology">Technology</option>
-                    <option value="HR">HR</option>
-                    <option value="Finance">Finance</option>
-                    <option value="Operations">Operations</option>
-                    <option value="Sales">Sales</option>
-                    <option value="Marketing">Marketing</option>
+                    {(masterOptions.departments || []).map((dept) => (
+                      <option key={dept} value={dept}>{dept}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -1120,10 +1304,12 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                     value={formData.employmentType}
                     onChange={handleChange}
                   >
-                    <option value="Full Time">Full Time</option>
-                    <option value="Part Time">Part Time</option>
-                    <option value="Contract">Contract</option>
-                    <option value="Intern">Intern</option>
+                    {masterOptions.employmentTypes.map((et) => (
+                      <option key={et} value={et}>{et}</option>
+                    ))}
+                    {formData.employmentType && !masterOptions.employmentTypes.includes(formData.employmentType) && (
+                      <option value={formData.employmentType}>{formData.employmentType}</option>
+                    )}
                   </select>
                 </div>
 
@@ -1157,11 +1343,12 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                     value={formData.workLocation}
                     onChange={handleChange}
                   >
-                    <option value="Hyderabad">Hyderabad</option>
-                    <option value="Bangalore">Bangalore</option>
-                    <option value="Mumbai">Mumbai</option>
-                    <option value="Pune">Pune</option>
-                    <option value="Remote">Remote</option>
+                    {masterOptions.locations.map((loc) => (
+                      <option key={loc} value={loc}>{loc}</option>
+                    ))}
+                    {formData.workLocation && !masterOptions.locations.includes(formData.workLocation) && (
+                      <option value={formData.workLocation}>{formData.workLocation}</option>
+                    )}
                   </select>
                 </div>
 
@@ -1293,10 +1480,237 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
             </div>
           )}
 
-          {/* ==================== STEP 5: Salary & Payroll ==================== */}
+          {/* ==================== STEP 5: Bank Details ==================== */}
           {currentStep === 5 && (
             <div className="wizard-step-content">
-              <h3 className="wizard-section-heading">Step 5: Salary & Payroll Setup</h3>
+              <h3 className="wizard-section-heading">Step 5: Bank Details</h3>
+              <p className="wizard-section-desc">
+                Disbursement account details for monthly salary processing. IDFC Bank is configured by default.
+              </p>
+
+              {/* Bank Not Available Checkbox */}
+              <div className="wizard-checkbox-banner">
+                <label className="wizard-checkbox-label">
+                  <input
+                    type="checkbox"
+                    name="bankNotAvailable"
+                    checked={formData.bankNotAvailable}
+                    onChange={handleChange}
+                    className="wizard-checkbox-input"
+                  />
+                  <span>Bank details not available now</span>
+                </label>
+                {formData.bankNotAvailable && (
+                  <p className="wizard-checkbox-note">
+                    Bank record will not be created now. Banking information can be added subsequently.
+                  </p>
+                )}
+              </div>
+
+              {!formData.bankNotAvailable && (
+                <div className="wizard-form-grid" style={{ marginTop: '1.25rem' }}>
+                  {/* Account Holder Name (Required) */}
+                  <div className="wizard-field-group">
+                    <label htmlFor="bankAccountHolderName" className="wizard-field-label">
+                      Account Holder Name <span className="required">*</span>
+                    </label>
+                    <input
+                      id="bankAccountHolderName"
+                      name="bankAccountHolderName"
+                      type="text"
+                      required
+                      aria-required="true"
+                      className="wizard-field-input"
+                      value={formData.bankAccountHolderName}
+                      onChange={handleChange}
+                      placeholder="Enter account holder name"
+                    />
+                  </div>
+
+                  {/* Bank Name (Dropdown, default IDFC Bank) */}
+                  <div className="wizard-field-group">
+                    <label htmlFor="bankName" className="wizard-field-label">
+                      Bank Name <span className="required">*</span>
+                    </label>
+                    <select
+                      id="bankName"
+                      name="bankName"
+                      required
+                      aria-required="true"
+                      className="wizard-field-select"
+                      value={formData.bankName}
+                      onChange={handleChange}
+                    >
+                      <option value="IDFC Bank">IDFC Bank</option>
+                      <option value="State Bank of India">State Bank of India</option>
+                      <option value="HDFC Bank">HDFC Bank</option>
+                      <option value="ICICI Bank">ICICI Bank</option>
+                      <option value="Axis Bank">Axis Bank</option>
+                      <option value="Kotak Mahindra Bank">Kotak Mahindra Bank</option>
+                      <option value="Punjab National Bank">Punjab National Bank</option>
+                      <option value="Bank of Baroda">Bank of Baroda</option>
+                    </select>
+                  </div>
+
+                  {/* Account Number (Required) */}
+                  <div className="wizard-field-group">
+                    <label htmlFor="bankAccountNumber" className="wizard-field-label">
+                      Account Number <span className="required">*</span>
+                    </label>
+                    <input
+                      id="bankAccountNumber"
+                      name="bankAccountNumber"
+                      type="password"
+                      autoComplete="new-password"
+                      required
+                      aria-required="true"
+                      className="wizard-field-input font-mono"
+                      value={formData.bankAccountNumber}
+                      onChange={handleChange}
+                      placeholder="Enter 9 to 18 digit account number"
+                    />
+                    <span className="wizard-field-hint">9 to 18 numeric digits</span>
+                  </div>
+
+                  {/* Confirm Account Number (Required) */}
+                  <div className="wizard-field-group">
+                    <label htmlFor="bankConfirmAccountNumber" className="wizard-field-label">
+                      Confirm Account Number <span className="required">*</span>
+                    </label>
+                    <input
+                      id="bankConfirmAccountNumber"
+                      name="bankConfirmAccountNumber"
+                      type="text"
+                      autoComplete="off"
+                      required
+                      aria-required="true"
+                      className="wizard-field-input font-mono"
+                      value={formData.bankConfirmAccountNumber}
+                      onChange={handleChange}
+                      placeholder="Re-enter account number to confirm"
+                      style={isBankMismatch ? { borderColor: '#ef4444', backgroundColor: '#fef2f2' } : {}}
+                      aria-invalid={isBankMismatch}
+                      aria-describedby={isBankMismatch ? 'bankConfirmMismatchError' : undefined}
+                    />
+                    {isBankMismatch && (
+                      <span
+                        id="bankConfirmMismatchError"
+                        className="wizard-field-error"
+                        style={{
+                          display: 'block',
+                          color: '#ef4444',
+                          fontSize: '0.8125rem',
+                          marginTop: '0.375rem',
+                          fontWeight: 500,
+                        }}
+                        role="alert"
+                      >
+                        Account numbers do not match.
+                      </span>
+                    )}
+                  </div>
+
+                  {/* IFSC Code (Required) */}
+                  <div className="wizard-field-group">
+                    <label htmlFor="bankIfscCode" className="wizard-field-label">
+                      IFSC Code <span className="required">*</span>
+                    </label>
+                    <input
+                      id="bankIfscCode"
+                      name="bankIfscCode"
+                      type="text"
+                      required
+                      aria-required="true"
+                      className="wizard-field-input font-mono"
+                      value={formData.bankIfscCode}
+                      onChange={(e) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          bankIfscCode: e.target.value.toUpperCase(),
+                        }));
+                      }}
+                      placeholder="e.g. IDFB0001234"
+                      maxLength={11}
+                    />
+                    <span className="wizard-field-hint">11-character Indian financial code</span>
+                  </div>
+
+                  {/* Account Type (Dropdown) */}
+                  <div className="wizard-field-group">
+                    <label htmlFor="bankAccountType" className="wizard-field-label">
+                      Account Type <span className="required">*</span>
+                    </label>
+                    <select
+                      id="bankAccountType"
+                      name="bankAccountType"
+                      required
+                      aria-required="true"
+                      className="wizard-field-select"
+                      value={formData.bankAccountType}
+                      onChange={handleChange}
+                    >
+                      <option value="Savings">Savings</option>
+                      <option value="Salary">Salary</option>
+                      <option value="Current">Current</option>
+                    </select>
+                  </div>
+
+                  {/* Branch Name (Optional) */}
+                  <div className="wizard-field-group">
+                    <label htmlFor="bankBranchName" className="wizard-field-label">
+                      Branch Name
+                    </label>
+                    <input
+                      id="bankBranchName"
+                      name="bankBranchName"
+                      type="text"
+                      className="wizard-field-input"
+                      value={formData.bankBranchName}
+                      onChange={handleChange}
+                      placeholder="e.g. Hitec City Branch"
+                    />
+                  </div>
+
+                  {/* Branch City (Optional) */}
+                  <div className="wizard-field-group">
+                    <label htmlFor="bankBranchCity" className="wizard-field-label">
+                      Branch City
+                    </label>
+                    <input
+                      id="bankBranchCity"
+                      name="bankBranchCity"
+                      type="text"
+                      className="wizard-field-input"
+                      value={formData.bankBranchCity}
+                      onChange={handleChange}
+                      placeholder="e.g. Hyderabad"
+                    />
+                  </div>
+
+                  {/* Branch State (Optional) */}
+                  <div className="wizard-field-group">
+                    <label htmlFor="bankBranchState" className="wizard-field-label">
+                      Branch State
+                    </label>
+                    <input
+                      id="bankBranchState"
+                      name="bankBranchState"
+                      type="text"
+                      className="wizard-field-input"
+                      value={formData.bankBranchState}
+                      onChange={handleChange}
+                      placeholder="e.g. Telangana"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ==================== STEP 6: Salary & Payroll ==================== */}
+          {currentStep === 6 && (
+            <div className="wizard-step-content">
+              <h3 className="wizard-section-heading">Step 6: Salary & Payroll Setup</h3>
               <p className="wizard-section-desc">
                 Define the base monthly compensation profile for payroll calculations.
               </p>
@@ -1450,10 +1864,10 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
             </div>
           )}
 
-          {/* ==================== STEP 6: Leave Setup ==================== */}
-          {currentStep === 6 && (
+          {/* ==================== STEP 7: Leave Setup ==================== */}
+          {currentStep === 7 && (
             <div className="wizard-step-content">
-              <h3 className="wizard-section-heading">Step 6: Leave Setup</h3>
+              <h3 className="wizard-section-heading">Step 7: Leave Setup</h3>
               <p className="wizard-section-desc">
                 Initialize statutory annual leave quotas for the employee.
               </p>
@@ -1525,10 +1939,10 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
             </div>
           )}
 
-          {/* ==================== STEP 7: Documents ==================== */}
-          {currentStep === 7 && (
+          {/* ==================== STEP 8: Documents ==================== */}
+          {currentStep === 8 && (
             <div className="wizard-step-content">
-              <h3 className="wizard-section-heading">Step 7: Documents</h3>
+              <h3 className="wizard-section-heading">Step 8: Documents</h3>
               <p className="wizard-section-desc">
                 Upload initial onboarding documents. All documents are optional and can be submitted or uploaded later.
               </p>
@@ -1600,10 +2014,10 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
             </div>
           )}
 
-          {/* ==================== STEP 8: Review & Final Create ==================== */}
-          {currentStep === 8 && (
+          {/* ==================== STEP 9: Review & Final Create ==================== */}
+          {currentStep === 9 && (
             <div className="wizard-step-content">
-              <h3 className="wizard-section-heading">Step 8: Review & Final Create</h3>
+              <h3 className="wizard-section-heading">Step 9: Review & Final Create</h3>
               <p className="wizard-section-desc">
                 Verify all employee records and financial configurations before atomic submission.
               </p>
@@ -1686,11 +2100,35 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                   </div>
                 </div>
 
-                {/* 5. Salary & Payroll */}
+                {/* 5. Bank Details */}
+                <div className="review-section-card">
+                  <div className="review-card-header">
+                    <h4>Bank Details</h4>
+                    <button type="button" className="review-edit-btn" onClick={() => handleJumpToStep(5)}>
+                      Edit
+                    </button>
+                  </div>
+                  <div className="review-card-grid">
+                    {formData.bankNotAvailable ? (
+                      <div><span className="review-label">Status:</span> <span className="review-value text-muted">Bank details deferred (Not available now)</span></div>
+                    ) : (
+                      <>
+                        <div><span className="review-label">Account Holder:</span> <span className="review-value">{formData.bankAccountHolderName || '—'}</span></div>
+                        <div><span className="review-label">Bank Name:</span> <span className="review-value">{formData.bankName || 'IDFC Bank'}</span></div>
+                        <div><span className="review-label">Account Number:</span> <span className="review-value font-mono">{formData.bankAccountNumber ? `••••••••${formData.bankAccountNumber.slice(-4)}` : '—'}</span></div>
+                        <div><span className="review-label">IFSC Code:</span> <span className="review-value font-mono">{formData.bankIfscCode || '—'}</span></div>
+                        <div><span className="review-label">Branch:</span> <span className="review-value">{[formData.bankBranchName, formData.bankBranchCity, formData.bankBranchState].filter(Boolean).join(', ') || '—'}</span></div>
+                        <div><span className="review-label">Account Type:</span> <span className="review-value">{formData.bankAccountType}</span></div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* 6. Salary & Payroll */}
                 <div className="review-section-card">
                   <div className="review-card-header">
                     <h4>Salary & Payroll</h4>
-                    <button type="button" className="review-edit-btn" onClick={() => handleJumpToStep(5)}>
+                    <button type="button" className="review-edit-btn" onClick={() => handleJumpToStep(6)}>
                       Edit
                     </button>
                   </div>
@@ -1704,11 +2142,11 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                   </div>
                 </div>
 
-                {/* 6. Leave Setup */}
+                {/* 7. Leave Setup */}
                 <div className="review-section-card">
                   <div className="review-card-header">
                     <h4>Leave Allocations</h4>
-                    <button type="button" className="review-edit-btn" onClick={() => handleJumpToStep(6)}>
+                    <button type="button" className="review-edit-btn" onClick={() => handleJumpToStep(7)}>
                       Edit
                     </button>
                   </div>
@@ -1719,11 +2157,11 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                   </div>
                 </div>
 
-                {/* 7. Documents */}
+                {/* 8. Documents */}
                 <div className="review-section-card">
                   <div className="review-card-header">
                     <h4>Attached Documents</h4>
-                    <button type="button" className="review-edit-btn" onClick={() => handleJumpToStep(7)}>
+                    <button type="button" className="review-edit-btn" onClick={() => handleJumpToStep(8)}>
                       Edit
                     </button>
                   </div>
@@ -1793,12 +2231,12 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                 {currentStep === 1 ? 'Cancel' : 'Back'}
               </button>
 
-              {currentStep < 8 ? (
+              {currentStep < 9 ? (
                 <button
                   type="button"
                   className="wizard-btn wizard-btn-primary"
                   onClick={handleNext}
-                  disabled={submitting}
+                  disabled={submitting || (currentStep === 5 && isBankMismatch)}
                 >
                   Next Step
                 </button>
@@ -1807,7 +2245,7 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                   type="button"
                   className="wizard-btn wizard-btn-primary wizard-btn-submit"
                   onClick={handleSubmit}
-                  disabled={submitting}
+                  disabled={submitting || isBankMismatch}
                 >
                   {submitting ? 'Creating Employee...' : 'Complete Onboarding'}
                 </button>

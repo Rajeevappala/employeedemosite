@@ -2,6 +2,12 @@ const path = require('path');
 const pool = require('../config/database');
 const { recordAuditLog } = require('../services/auditService');
 const storageService = require('../services/storageService');
+const {
+  encryptAccountNumber,
+  maskAccountNumber,
+  isValidIFSC,
+  isValidAccountNumber,
+} = require('../services/bankEncryptionService');
 
 function isValidDateString(dateStr) {
   if (typeof dateStr !== 'string') return false;
@@ -98,7 +104,9 @@ const getEmployees = async (req, res, next) => {
         updated_at
       FROM employees
       ${whereClause}
-      ORDER BY created_at DESC
+      ORDER BY 
+        COALESCE(NULLIF(SUBSTRING(employee_id FROM '([0-9]+)'), '')::INTEGER, 999999) ASC,
+        employee_id ASC
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `;
 
@@ -188,12 +196,61 @@ const getEmployeeById = async (req, res, next) => {
 
     const emp = result.rows[0];
     const hasPhoto = Boolean(emp.profile_photo_url && String(emp.profile_photo_url).trim());
+
+    // Fetch related records in parallel for complete profile management
+    const [payrollRes, leavesRes, pfRes, docsRes, bankRes] = await Promise.all([
+      pool.query(
+        `SELECT basic_salary, hra, allowances, pf_employee, professional_tax, other_deductions,
+                TO_CHAR(effective_from, 'YYYY-MM-DD') AS effective_from
+         FROM public.payroll_profiles WHERE employee_id = $1`,
+        [sanitizedEmployeeId]
+      ),
+      pool.query(
+        `SELECT paid_leave_balance, sick_leave_balance, unpaid_leave_balance
+         FROM public.leave_balances WHERE employee_id = $1`,
+        [sanitizedEmployeeId]
+      ),
+      pool.query(
+        `SELECT uan_number, pf_number, pension_number
+         FROM public.pf_details WHERE employee_id = $1`,
+        [sanitizedEmployeeId]
+      ),
+      pool.query(
+        `SELECT id, document_type, file_name, month, year, created_at
+         FROM public.documents WHERE employee_id = $1 ORDER BY created_at DESC`,
+        [sanitizedEmployeeId]
+      ),
+      pool.query(
+        `SELECT id, account_holder_name, bank_name, account_number_last4, ifsc_code,
+                branch_name, branch_city, branch_state, account_type, verification_status,
+                admin_remarks, created_at, updated_at
+         FROM public.employee_bank_details WHERE employee_id = $1`,
+        [sanitizedEmployeeId]
+      ),
+    ]);
+
+    const bankRow = bankRes.rows[0] || null;
+    const sanitizedBankDetails = bankRow ? {
+      ...bankRow,
+      account_number: maskAccountNumber(bankRow.account_number_last4),
+    } : null;
+
     const sanitizedData = {
       ...emp,
       has_profile_photo: hasPhoto,
       photo_url: hasPhoto ? `/api/admin/employees/${sanitizedEmployeeId}/photo` : null,
+      payroll_profile: payrollRes.rows[0] || null,
+      payroll_profiles: payrollRes.rows[0] || null,
+      payroll: payrollRes.rows[0] || null,
+      leave_balances: leavesRes.rows[0] || null,
+      pf_details: pfRes.rows[0] || null,
+      pf: pfRes.rows[0] || null,
+      documents: docsRes.rows || [],
+      bank_details: sanitizedBankDetails,
+      bank: sanitizedBankDetails,
     };
     delete sanitizedData.profile_photo_url;
+
 
     return res.status(200).json({
       success: true,
@@ -229,11 +286,12 @@ const onboardEmployee = async (req, res, next) => {
     if (typeof pfDetails === 'string') {
       try { pfDetails = JSON.parse(pfDetails); } catch { pfDetails = {}; }
     }
+    let bankDetails = req.body.bankDetails || req.body.bank_details || {};
+    if (typeof bankDetails === 'string') {
+      try { bankDetails = JSON.parse(bankDetails); } catch { bankDetails = {}; }
+    }
 
     if (req.body.userType === 'Admin') {
-      if (req.user.role !== 'SUPER_ADMIN') {
-        return res.status(403).json({ success: false, message: 'Access denied. Only SUPER_ADMIN can create ADMIN accounts.' });
-      }
       return res.status(400).json({ success: false, message: 'Use the user management endpoint to create administrator accounts.' });
     }
 
@@ -326,6 +384,18 @@ const onboardEmployee = async (req, res, next) => {
     }
     const sanitizedDepartment = department.trim();
 
+    // Enforce active department validation (IT / Non-IT)
+    const activeDeptRes = await pool.query(
+      'SELECT id, name FROM public.organization_departments WHERE is_active = true AND LOWER(TRIM(name)) = LOWER(TRIM($1))',
+      [sanitizedDepartment]
+    );
+    if (activeDeptRes.rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Department '${sanitizedDepartment}' is not an active department. Supported active departments: IT, Non-IT.`,
+      });
+    }
+
     if (!designation || typeof designation !== 'string' || !designation.trim()) {
       return res.status(400).json({ success: false, message: 'Designation is required.' });
     }
@@ -407,6 +477,51 @@ const onboardEmployee = async (req, res, next) => {
     const workingDaysPerWeek = parseInt(rawWorkingDays, 10);
     if (![5, 6].includes(workingDaysPerWeek)) {
       return res.status(400).json({ success: false, message: 'Invalid working days per week. Allowed values: 5 or 6.' });
+    }
+
+    // Validation: Bank Details (Step 5)
+    const bankNotAvailable = req.body.bankNotAvailable === true || req.body.bankNotAvailable === 'true' ||
+      req.body.bank_not_available === true || req.body.bank_not_available === 'true' ||
+      bankDetails.bankNotAvailable === true || bankDetails.bankNotAvailable === 'true' ||
+      bankDetails.bank_not_available === true || bankDetails.bank_not_available === 'true';
+
+    const rawBankHolder = (bankDetails.account_holder_name || bankDetails.accountHolderName || req.body.bank_account_holder_name || req.body.bankAccountHolderName || '').toString().trim();
+    const rawBankName = (bankDetails.bank_name || bankDetails.bankName || req.body.bank_name || req.body.bankName || '').toString().trim();
+    const rawBankAccNum = (bankDetails.account_number || bankDetails.accountNumber || req.body.bank_account_number || req.body.bankAccountNumber || '').toString().trim();
+    const rawBankConfirmAccNum = (bankDetails.confirm_account_number || bankDetails.confirmAccountNumber || req.body.bank_confirm_account_number || req.body.bankConfirmAccountNumber || '').toString().trim();
+    const rawBankIfsc = (bankDetails.ifsc_code || bankDetails.ifscCode || req.body.bank_ifsc_code || req.body.bankIfscCode || '').toString().trim().toUpperCase();
+    const rawBankBranch = (bankDetails.branch_name || bankDetails.branchName || req.body.bank_branch_name || req.body.bankBranchName || '').toString().trim();
+    const rawBankCity = (bankDetails.branch_city || bankDetails.branchCity || req.body.bank_branch_city || req.body.bankBranchCity || '').toString().trim();
+    const rawBankState = (bankDetails.branch_state || bankDetails.branchState || req.body.bank_branch_state || req.body.bankBranchState || '').toString().trim();
+    const rawBankAccType = (bankDetails.account_type || bankDetails.accountType || req.body.bank_account_type || req.body.bankAccountType || '').toString().trim();
+
+    const hasBankDetails = !bankNotAvailable && Boolean(rawBankHolder || rawBankAccNum || rawBankIfsc || rawBankBranch || rawBankCity || rawBankState);
+
+    if (hasBankDetails) {
+      if (!rawBankHolder) {
+        return res.status(400).json({ success: false, message: 'Account holder name is required.' });
+      }
+      if (!rawBankAccNum) {
+        return res.status(400).json({ success: false, message: 'Account number is required.' });
+      }
+      if (!isValidAccountNumber(rawBankAccNum)) {
+        return res.status(400).json({ success: false, message: 'Invalid account number. Account number must contain 9 to 18 digits.' });
+      }
+      if (!rawBankConfirmAccNum) {
+        return res.status(400).json({ success: false, message: 'Please confirm the account number.' });
+      }
+      if (rawBankConfirmAccNum !== rawBankAccNum) {
+        return res.status(400).json({ success: false, message: 'Account numbers do not match. Please verify and re-enter.' });
+      }
+      if (!rawBankIfsc) {
+        return res.status(400).json({ success: false, message: 'IFSC code is required.' });
+      }
+      if (!isValidIFSC(rawBankIfsc)) {
+        return res.status(400).json({ success: false, message: 'Invalid IFSC code format (e.g., IDFB0001234).' });
+      }
+      if (rawBankAccType && !['Savings', 'Current', 'Salary'].includes(rawBankAccType)) {
+        return res.status(400).json({ success: false, message: 'Invalid account type. Allowed: Savings, Current, Salary.' });
+      }
     }
 
     // START TRANSACTION
@@ -541,6 +656,50 @@ const onboardEmployee = async (req, res, next) => {
       );
     }
 
+    // 10B. Optional Bank details (Atomically saved within same onboarding transaction)
+    let savedBankDetails = null;
+    if (hasBankDetails) {
+      const encryptedAcc = encryptAccountNumber(rawBankAccNum);
+      const last4 = rawBankAccNum.slice(-4);
+      const bName = rawBankName || 'IDFC Bank';
+      const bType = rawBankAccType || 'Savings';
+
+      await client.query(
+        `INSERT INTO public.employee_bank_details (
+           employee_id, account_holder_name, bank_name,
+           account_number_encrypted, account_number_last4,
+           ifsc_code, branch_name, branch_city, branch_state,
+           account_type, verification_status, created_by
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Pending', $11)`,
+        [
+          employeeId,
+          rawBankHolder,
+          bName,
+          encryptedAcc,
+          last4,
+          rawBankIfsc,
+          rawBankBranch || null,
+          rawBankCity || null,
+          rawBankState || null,
+          bType,
+          req.user?.id || userId,
+        ]
+      );
+
+      savedBankDetails = {
+        account_holder_name: rawBankHolder,
+        bank_name: bName,
+        account_number: maskAccountNumber(last4),
+        account_number_last4: last4,
+        ifsc_code: rawBankIfsc,
+        branch_name: rawBankBranch || null,
+        branch_city: rawBankCity || null,
+        branch_state: rawBankState || null,
+        account_type: bType,
+        verification_status: 'Pending',
+      };
+    }
+
     // 11. Process and store uploaded documents (Step 7)
     let uploadedDocsCount = 0;
     if (req.files && Array.isArray(req.files) && req.files.length > 0) {
@@ -603,6 +762,24 @@ const onboardEmployee = async (req, res, next) => {
       req,
     });
 
+    if (hasBankDetails && savedBankDetails) {
+      await recordAuditLog({
+        userId: req.user?.id || userId,
+        action: 'EMPLOYEE_BANK_DETAILS_CREATED',
+        entityType: 'BANK_DETAILS',
+        entityId: employeeId,
+        metadata: {
+          employee_id: employeeId,
+          bank_name: savedBankDetails.bank_name,
+          account_holder_name: savedBankDetails.account_holder_name,
+          account_number_last4: savedBankDetails.account_number_last4,
+          ifsc_code: savedBankDetails.ifsc_code,
+          account_type: savedBankDetails.account_type,
+        },
+        req,
+      });
+    }
+
     const grossSalary = basicSalary + hra + allowances;
     const totalDeductions = pfEmployee + professionalTax + otherDeductions;
     const netSalary = grossSalary - totalDeductions;
@@ -645,6 +822,8 @@ const onboardEmployee = async (req, res, next) => {
           total_deductions: totalDeductions,
           net_calculated: netSalary,
         },
+        bank_details: savedBankDetails,
+        bank: savedBankDetails,
         documents_count: uploadedDocsCount,
       },
     });
@@ -677,6 +856,7 @@ const onboardEmployee = async (req, res, next) => {
  * - Role and user ID cannot be altered.
  */
 const updateEmployeeProfile = async (req, res, next) => {
+  const savedStorageKeys = [];
   try {
     const { employeeId } = req.params;
     if (!employeeId || typeof employeeId !== 'string') {
@@ -686,13 +866,27 @@ const updateEmployeeProfile = async (req, res, next) => {
 
     // Check employee exists
     const empCheck = await pool.query(
-      'SELECT employee_id, user_id, email, working_days_per_week FROM public.employees WHERE employee_id = $1',
+      'SELECT employee_id, user_id, email, department, working_days_per_week, status, profile_photo_url FROM public.employees WHERE employee_id = $1',
       [trimmedId]
     );
     if (empCheck.rows.length === 0) {
       return res.status(404).json({ success: false, message: `Employee '${trimmedId}' not found.` });
     }
     const currentEmp = empCheck.rows[0];
+
+    // Safely parse JSON strings if form-data submitted complex objects
+    let salary = req.body.salary || {};
+    if (typeof salary === 'string') {
+      try { salary = JSON.parse(salary); } catch { salary = {}; }
+    }
+    let leaveBalances = req.body.leaveBalances || req.body.leave_balances || {};
+    if (typeof leaveBalances === 'string') {
+      try { leaveBalances = JSON.parse(leaveBalances); } catch { leaveBalances = {}; }
+    }
+    let pfDetails = req.body.pfDetails || req.body.pf_details || {};
+    if (typeof pfDetails === 'string') {
+      try { pfDetails = JSON.parse(pfDetails); } catch { pfDetails = {}; }
+    }
 
     const {
       firstName, first_name,
@@ -711,6 +905,10 @@ const updateEmployeeProfile = async (req, res, next) => {
       postalCode, postal_code,
       emergencyContactName, emergency_contact_name,
       emergencyContactPhone, emergency_contact_phone,
+      emergencyContactRelationship, emergency_contact_relationship,
+      personalEmail, personal_email,
+      workLocation, work_location,
+      status,
       email,
       workingDaysPerWeek, working_days_per_week,
     } = req.body;
@@ -724,6 +922,9 @@ const updateEmployeeProfile = async (req, res, next) => {
     const pCode = postalCode !== undefined ? postalCode : postal_code;
     const emName = emergencyContactName !== undefined ? emergencyContactName : emergency_contact_name;
     const emPhone = emergencyContactPhone !== undefined ? emergencyContactPhone : emergency_contact_phone;
+    const emRel = emergencyContactRelationship !== undefined ? emergencyContactRelationship : emergency_contact_relationship;
+    const persEmail = personalEmail !== undefined ? personalEmail : personal_email;
+    const wLoc = workLocation !== undefined ? workLocation : work_location;
 
     // Working days per week validation
     const rawWorkingDays = workingDaysPerWeek !== undefined ? workingDaysPerWeek : working_days_per_week;
@@ -735,11 +936,20 @@ const updateEmployeeProfile = async (req, res, next) => {
       }
     }
 
+    // Status validation
+    let targetStatus = undefined;
+    if (status !== undefined && status !== null && String(status).trim() !== '') {
+      targetStatus = String(status).trim().toUpperCase();
+      if (!['ACTIVE', 'INACTIVE', 'SUSPENDED'].includes(targetStatus)) {
+        return res.status(400).json({ success: false, message: 'Invalid employee status. Allowed values: ACTIVE, INACTIVE, SUSPENDED.' });
+      }
+    }
+
     // Validation
     if (fName !== undefined && (!fName || typeof fName !== 'string' || !fName.trim())) {
       return res.status(400).json({ success: false, message: 'First name cannot be empty.' });
     }
-    if (phone !== undefined && phone !== null && String(phone).trim() !== '' && !/^\d{10}$/.test(String(phone).trim())) {
+    if (phone !== undefined && phone !== null && String(phone).trim() !== '' && !/^\d{10}$/.test(String(phone).trim().replace(/\D/g, ''))) {
       return res.status(400).json({ success: false, message: 'Phone number must be exactly 10 digits.' });
     }
     if (dob !== undefined && dob !== null && String(dob).trim() !== '' && !isValidDateString(String(dob).trim())) {
@@ -749,6 +959,23 @@ const updateEmployeeProfile = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid date of joining format (YYYY-MM-DD).' });
     }
 
+    // Department validation: allow existing legacy department to remain, but new department assignment must be active (IT / Non-IT)
+    if (department !== undefined && department !== null && String(department).trim() !== '') {
+      const sanitizedNewDept = String(department).trim();
+      if (sanitizedNewDept.toLowerCase() !== (currentEmp.department || '').toLowerCase()) {
+        const activeDeptRes = await pool.query(
+          'SELECT id, name FROM public.organization_departments WHERE is_active = true AND LOWER(TRIM(name)) = LOWER(TRIM($1))',
+          [sanitizedNewDept]
+        );
+        if (activeDeptRes.rows.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Department '${sanitizedNewDept}' is not an active department. Supported active departments: IT, Non-IT.`,
+          });
+        }
+      }
+    }
+
     // Handle email update if supplied and different
     let newEmail = null;
     if (email && typeof email === 'string' && email.trim().toLowerCase() !== currentEmp.email?.toLowerCase()) {
@@ -756,12 +983,20 @@ const updateEmployeeProfile = async (req, res, next) => {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
         return res.status(400).json({ success: false, message: 'Invalid email address format.' });
       }
-      // Check collision
+      // Check collision in users
       const checkUser = await pool.query(
         'SELECT id FROM public.users WHERE LOWER(email) = $1 AND employee_id != $2',
         [newEmail, trimmedId]
       );
       if (checkUser.rows.length > 0) {
+        return res.status(409).json({ success: false, message: `Email '${newEmail}' is already in use by another account.` });
+      }
+      // Check collision in employees
+      const checkEmp = await pool.query(
+        'SELECT employee_id FROM public.employees WHERE LOWER(email) = $1 AND employee_id != $2',
+        [newEmail, trimmedId]
+      );
+      if (checkEmp.rows.length > 0) {
         return res.status(409).json({ success: false, message: `Email '${newEmail}' is already in use by another account.` });
       }
     }
@@ -789,17 +1024,21 @@ const updateEmployeeProfile = async (req, res, next) => {
           postal_code = COALESCE($14, postal_code),
           emergency_contact_name = COALESCE($15, emergency_contact_name),
           emergency_contact_phone = COALESCE($16, emergency_contact_phone),
-          email = COALESCE($17, email),
-          working_days_per_week = COALESCE($18, working_days_per_week),
+          emergency_contact_relationship = COALESCE($17, emergency_contact_relationship),
+          personal_email = COALESCE($18, personal_email),
+          work_location = COALESCE($19, work_location),
+          status = COALESCE($20, status),
+          working_days_per_week = COALESCE($21, working_days_per_week),
+          email = COALESCE($22, email),
           updated_at = NOW()
-        WHERE employee_id = $19
+        WHERE employee_id = $23
         RETURNING *;
       `;
 
-      const updateRes = await client.query(updateQuery, [
+      await client.query(updateQuery, [
         fName ? String(fName).trim() : null,
         lName !== undefined ? (lName ? String(lName).trim() : '') : null,
-        phone !== undefined ? (phone ? String(phone).trim() : null) : null,
+        phone !== undefined ? (phone ? String(phone).trim().replace(/\D/g, '').slice(-10) : null) : null,
         dob ? String(dob).trim() : null,
         gender !== undefined ? (gender ? String(gender).trim() : null) : null,
         department ? String(department).trim() : null,
@@ -813,20 +1052,352 @@ const updateEmployeeProfile = async (req, res, next) => {
         pCode !== undefined ? (pCode ? String(pCode).trim() : null) : null,
         emName !== undefined ? (emName ? String(emName).trim() : null) : null,
         emPhone !== undefined ? (emPhone ? String(emPhone).trim() : null) : null,
-        newEmail || null,
+        emRel !== undefined ? (emRel ? String(emRel).trim() : null) : null,
+        persEmail !== undefined ? (persEmail ? String(persEmail).trim().toLowerCase() : null) : null,
+        wLoc !== undefined ? (wLoc ? String(wLoc).trim() : null) : null,
+        targetStatus || null,
         parsedWorkingDays !== undefined ? parsedWorkingDays : null,
+        newEmail || null,
         trimmedId,
       ]);
 
+      // Synchronize users table
+      const userUpdates = [];
+      const userValues = [];
+      let paramIdx = 1;
+
+      if (fName) {
+        userUpdates.push(`first_name = $${paramIdx++}`);
+        userValues.push(String(fName).trim());
+      }
+      if (lName !== undefined) {
+        userUpdates.push(`last_name = $${paramIdx++}`);
+        userValues.push(lName ? String(lName).trim() : '');
+      }
       if (newEmail) {
+        userUpdates.push(`email = $${paramIdx++}`);
+        userValues.push(newEmail);
+      }
+      if (phone !== undefined) {
+        userUpdates.push(`phone = $${paramIdx++}`);
+        userValues.push(phone ? String(phone).trim().replace(/\D/g, '').slice(-10) : null);
+      }
+      if (targetStatus) {
+        userUpdates.push(`status = $${paramIdx++}`);
+        userValues.push(targetStatus);
+      }
+
+      if (userUpdates.length > 0) {
+        userValues.push(trimmedId);
         await client.query(
-          'UPDATE public.users SET email = $1, updated_at = NOW() WHERE employee_id = $2',
-          [newEmail, trimmedId]
+          `UPDATE public.users SET ${userUpdates.join(', ')}, updated_at = NOW() WHERE employee_id = $${paramIdx}`,
+          userValues
         );
+      }
+
+      // Handle Payroll Profiles (Step 5)
+      const rawBasic = req.body.basic_salary ?? req.body.basicSalary ?? salary.basicSalary ?? salary.basic_salary;
+      const rawHra = req.body.hra ?? salary.hra;
+      const rawAllowances = req.body.allowances ?? salary.allowances;
+      const rawPfEmp = req.body.pf_employee ?? req.body.pfEmployee ?? salary.pfEmployee ?? salary.pf_employee;
+      const rawPt = req.body.professional_tax ?? req.body.professionalTax ?? salary.professionalTax ?? salary.professional_tax;
+      const rawOther = req.body.other_deductions ?? req.body.otherDeductions ?? salary.otherDeductions ?? salary.other_deductions;
+
+      if (rawBasic !== undefined || rawHra !== undefined || rawAllowances !== undefined) {
+        const bSalary = Math.max(0, parseFloat(rawBasic) || 0);
+        const hraVal = Math.max(0, parseFloat(rawHra) || 0);
+        const allowVal = Math.max(0, parseFloat(rawAllowances) || 0);
+        const pfEmpVal = Math.max(0, parseFloat(rawPfEmp) || 0);
+        const ptVal = Math.max(0, parseFloat(rawPt) || 0);
+        const otherVal = Math.max(0, parseFloat(rawOther) || 0);
+
+        await client.query(
+          `INSERT INTO public.payroll_profiles (
+             employee_id, basic_salary, hra, allowances, pf_employee, professional_tax, other_deductions, effective_from
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (employee_id) DO UPDATE SET
+             basic_salary = EXCLUDED.basic_salary,
+             hra = EXCLUDED.hra,
+             allowances = EXCLUDED.allowances,
+             pf_employee = EXCLUDED.pf_employee,
+             professional_tax = EXCLUDED.professional_tax,
+             other_deductions = EXCLUDED.other_deductions,
+             updated_at = NOW()`,
+          [trimmedId, bSalary, hraVal, allowVal, pfEmpVal, ptVal, otherVal, doj || currentEmp.date_of_joining || '2026-01-01']
+        );
+      }
+
+      // Handle Leave Balances (Step 6)
+      const rawPL = req.body.paid_leave ?? req.body.paidLeave ?? leaveBalances.paidLeave ?? leaveBalances.paid_leave;
+      const rawSL = req.body.sick_leave ?? req.body.sickLeave ?? leaveBalances.sickLeave ?? leaveBalances.sick_leave;
+      const rawUPL = req.body.unpaid_leave ?? req.body.unpaidLeave ?? leaveBalances.unpaidLeave ?? leaveBalances.unpaid_leave;
+
+      if (rawPL !== undefined || rawSL !== undefined || rawUPL !== undefined) {
+        const plVal = Math.max(0, parseFloat(rawPL) || 0);
+        const slVal = Math.max(0, parseFloat(rawSL) || 0);
+        const uplVal = Math.max(0, parseFloat(rawUPL) || 0);
+
+        await client.query(
+          `INSERT INTO public.leave_balances (
+             employee_id, paid_leave_balance, sick_leave_balance, unpaid_leave_balance
+           ) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (employee_id) DO UPDATE SET
+             paid_leave_balance = EXCLUDED.paid_leave_balance,
+             sick_leave_balance = EXCLUDED.sick_leave_balance,
+             unpaid_leave_balance = EXCLUDED.unpaid_leave_balance,
+             updated_at = NOW()`,
+          [trimmedId, plVal, slVal, uplVal]
+        );
+      }
+
+      // Handle PF Details (Step 4)
+      const rawPfNotAvail = req.body.pfNotAvailable ?? req.body.pf_not_available ?? pfDetails.pfNotAvailable;
+      const isPfNotAvailable = rawPfNotAvail === 'true' || rawPfNotAvail === true;
+      const uanNum = (req.body.uan_number ?? req.body.uanNumber ?? pfDetails.uanNumber ?? pfDetails.uan_number ?? '').toString().trim();
+      const pfNum = (req.body.pf_number ?? req.body.pfNumber ?? pfDetails.pfNumber ?? pfDetails.pf_number ?? '').toString().trim();
+      const penNum = (req.body.pension_number ?? req.body.pensionNumber ?? pfDetails.pensionNumber ?? pfDetails.pension_number ?? '').toString().trim();
+
+      if (isPfNotAvailable) {
+        await client.query('DELETE FROM public.pf_details WHERE employee_id = $1', [trimmedId]);
+      } else if (uanNum || pfNum || penNum) {
+        await client.query(
+          `INSERT INTO public.pf_details (
+             employee_id, uan_number, pf_number, pension_number
+           ) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (employee_id) DO UPDATE SET
+             uan_number = EXCLUDED.uan_number,
+             pf_number = EXCLUDED.pf_number,
+             pension_number = EXCLUDED.pension_number,
+             updated_at = NOW()`,
+          [trimmedId, uanNum || null, pfNum || null, penNum || null]
+        );
+      }
+
+      // Handle Bank Details (Step 5)
+      let bankDetails = req.body.bankDetails || req.body.bank_details;
+      if (typeof bankDetails === 'string') {
+        try { bankDetails = JSON.parse(bankDetails); } catch { bankDetails = null; }
+      }
+
+      const rawBankNotAvail = req.body.bankNotAvailable ?? req.body.bank_not_available ?? bankDetails?.bankNotAvailable;
+      const isBankNotAvailable = rawBankNotAvail === 'true' || rawBankNotAvail === true;
+
+      const hasBankInput = !isBankNotAvailable && ((bankDetails !== undefined && bankDetails !== null) ||
+        req.body.bank_account_holder_name !== undefined ||
+        req.body.bankAccountHolderName !== undefined ||
+        req.body.account_holder_name !== undefined ||
+        req.body.bank_name !== undefined ||
+        req.body.bankName !== undefined ||
+        req.body.bank_account_number !== undefined ||
+        req.body.bankAccountNumber !== undefined ||
+        req.body.account_number !== undefined ||
+        req.body.bank_ifsc_code !== undefined ||
+        req.body.bankIfscCode !== undefined ||
+        req.body.ifsc_code !== undefined ||
+        req.body.bank_branch_name !== undefined ||
+        req.body.bankBranchName !== undefined ||
+        req.body.branch_name !== undefined ||
+        req.body.bank_branch_city !== undefined ||
+        req.body.bankBranchCity !== undefined ||
+        req.body.branch_city !== undefined ||
+        req.body.bank_branch_state !== undefined ||
+        req.body.bankBranchState !== undefined ||
+        req.body.branch_state !== undefined ||
+        req.body.bank_account_type !== undefined ||
+        req.body.bankAccountType !== undefined ||
+        req.body.account_type !== undefined ||
+        req.body.bank_verification_status !== undefined ||
+        req.body.bankVerificationStatus !== undefined ||
+        req.body.verification_status !== undefined);
+
+      let bankUpdated = false;
+      let finalBankRecord = null;
+
+      if (hasBankInput) {
+        const existingBankRes = await client.query(
+          'SELECT * FROM public.employee_bank_details WHERE employee_id = $1',
+          [trimmedId]
+        );
+        const existingBank = existingBankRes.rows[0] || null;
+
+        const rawBankHolder = bankDetails?.account_holder_name ?? bankDetails?.accountHolderName ?? req.body.bank_account_holder_name ?? req.body.bankAccountHolderName;
+        const rawBankName = bankDetails?.bank_name ?? bankDetails?.bankName ?? req.body.bank_name ?? req.body.bankName;
+        const rawBankAccNum = bankDetails?.account_number ?? bankDetails?.accountNumber ?? req.body.bank_account_number ?? req.body.bankAccountNumber;
+        const rawBankConfirmAccNum = bankDetails?.confirm_account_number ?? bankDetails?.confirmAccountNumber ?? req.body.bank_confirm_account_number ?? req.body.bankConfirmAccountNumber;
+        const rawBankIfsc = bankDetails?.ifsc_code ?? bankDetails?.ifscCode ?? req.body.bank_ifsc_code ?? req.body.bankIfscCode;
+        const rawBankBranch = bankDetails?.branch_name ?? bankDetails?.branchName ?? req.body.bank_branch_name ?? req.body.bankBranchName;
+        const rawBankCity = bankDetails?.branch_city ?? bankDetails?.branchCity ?? req.body.bank_branch_city ?? req.body.bankBranchCity;
+        const rawBankState = bankDetails?.branch_state ?? bankDetails?.branchState ?? req.body.bank_branch_state ?? req.body.bankBranchState;
+        const rawBankAccType = bankDetails?.account_type ?? bankDetails?.accountType ?? req.body.bank_account_type ?? req.body.bankAccountType;
+        const rawBankStatus = bankDetails?.verification_status ?? bankDetails?.verificationStatus ?? req.body.bank_verification_status ?? req.body.bankVerificationStatus;
+
+        // Account Holder Name
+        let sanitizedHolder = existingBank ? existingBank.account_holder_name : '';
+        if (rawBankHolder !== undefined) {
+          if (!rawBankHolder || !String(rawBankHolder).trim()) {
+            return res.status(400).json({ success: false, message: 'Account holder name is required.' });
+          }
+          sanitizedHolder = String(rawBankHolder).trim().substring(0, 255);
+        } else if (!existingBank) {
+          sanitizedHolder = `${fName || currentEmp.first_name} ${lName !== undefined ? lName : (currentEmp.last_name || '')}`.trim();
+        }
+
+        // Bank Name (Never reset existing bank name unless explicitly provided with non-empty string)
+        let sanitizedBankName = existingBank ? existingBank.bank_name : 'IDFC Bank';
+        if (rawBankName !== undefined && String(rawBankName).trim() !== '') {
+          sanitizedBankName = String(rawBankName).trim().substring(0, 100);
+        }
+
+        // Account Number
+        let sanitizedEncryptedAcc = existingBank ? existingBank.account_number_encrypted : null;
+        let sanitizedLast4 = existingBank ? existingBank.account_number_last4 : null;
+        let accNumberWasUpdated = false;
+
+        if (rawBankAccNum !== undefined && String(rawBankAccNum).trim() !== '') {
+          const rawAcc = String(rawBankAccNum).trim();
+          if (rawAcc.includes('•')) {
+            // Masked account number passed from UI — retain existing encryption
+            if (!existingBank) {
+              return res.status(400).json({ success: false, message: 'A valid full account number is required.' });
+            }
+          } else {
+            if (!isValidAccountNumber(rawAcc)) {
+              return res.status(400).json({ success: false, message: 'Invalid account number. Account number must contain 9 to 18 digits.' });
+            }
+            const confirmVal = rawBankConfirmAccNum !== undefined ? String(rawBankConfirmAccNum).trim() : '';
+            if (!confirmVal) {
+              return res.status(400).json({ success: false, message: 'Please confirm the account number.' });
+            }
+            if (rawAcc !== confirmVal) {
+              return res.status(400).json({ success: false, message: 'Account numbers do not match. Please verify and re-enter.' });
+            }
+            sanitizedEncryptedAcc = encryptAccountNumber(rawAcc);
+            sanitizedLast4 = rawAcc.slice(-4);
+            accNumberWasUpdated = true;
+          }
+        } else if (!existingBank) {
+          return res.status(400).json({ success: false, message: 'Account number is required.' });
+        }
+
+        // IFSC Code
+        let sanitizedIfsc = existingBank ? existingBank.ifsc_code : '';
+        if (rawBankIfsc !== undefined && String(rawBankIfsc).trim() !== '') {
+          const rawIfsc = String(rawBankIfsc).trim().toUpperCase();
+          if (!isValidIFSC(rawIfsc)) {
+            return res.status(400).json({ success: false, message: 'Invalid IFSC code format (e.g., IDFB0001234).' });
+          }
+          sanitizedIfsc = rawIfsc;
+        } else if (!existingBank) {
+          return res.status(400).json({ success: false, message: 'IFSC code is required.' });
+        }
+
+        // Account Type
+        let sanitizedAccType = existingBank ? existingBank.account_type : 'Savings';
+        if (rawBankAccType !== undefined && String(rawBankAccType).trim() !== '') {
+          const t = String(rawBankAccType).trim();
+          if (!['Savings', 'Current', 'Salary'].includes(t)) {
+            return res.status(400).json({ success: false, message: 'Invalid account type. Allowed: Savings, Current, Salary.' });
+          }
+          sanitizedAccType = t;
+        }
+
+        // Verification Status: Preserve existing unless explicitly provided or account number changed
+        let targetVerStatus = existingBank ? existingBank.verification_status : 'Pending';
+        if (rawBankStatus && ['Pending', 'Verified', 'Rejected'].includes(String(rawBankStatus).trim())) {
+          targetVerStatus = String(rawBankStatus).trim();
+        } else if (accNumberWasUpdated) {
+          targetVerStatus = 'Pending';
+        }
+
+        const bBranch = rawBankBranch !== undefined ? (rawBankBranch ? String(rawBankBranch).trim() : null) : (existingBank ? existingBank.branch_name : null);
+        const bCity = rawBankCity !== undefined ? (rawBankCity ? String(rawBankCity).trim() : null) : (existingBank ? existingBank.branch_city : null);
+        const bState = rawBankState !== undefined ? (rawBankState ? String(rawBankState).trim() : null) : (existingBank ? existingBank.branch_state : null);
+
+        const upsertRes = await client.query(
+          `INSERT INTO public.employee_bank_details (
+             employee_id, account_holder_name, bank_name,
+             account_number_encrypted, account_number_last4,
+             ifsc_code, branch_name, branch_city, branch_state,
+             account_type, verification_status, updated_by, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+           ON CONFLICT (employee_id) DO UPDATE SET
+             account_holder_name = EXCLUDED.account_holder_name,
+             bank_name = EXCLUDED.bank_name,
+             account_number_encrypted = EXCLUDED.account_number_encrypted,
+             account_number_last4 = EXCLUDED.account_number_last4,
+             ifsc_code = EXCLUDED.ifsc_code,
+             branch_name = EXCLUDED.branch_name,
+             branch_city = EXCLUDED.branch_city,
+             branch_state = EXCLUDED.branch_state,
+             account_type = EXCLUDED.account_type,
+             verification_status = EXCLUDED.verification_status,
+             updated_by = EXCLUDED.updated_by,
+             updated_at = NOW()
+           RETURNING *`,
+          [
+            trimmedId,
+            sanitizedHolder,
+            sanitizedBankName,
+            sanitizedEncryptedAcc,
+            sanitizedLast4,
+            sanitizedIfsc,
+            bBranch,
+            bCity,
+            bState,
+            sanitizedAccType,
+            targetVerStatus,
+            req.user.id,
+          ]
+        );
+
+        finalBankRecord = upsertRes.rows[0];
+        bankUpdated = true;
+      }
+
+      // Handle File Uploads (Profile photo and onboarding documents)
+      if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+        for (const file of req.files) {
+          let docType = 'Other Document';
+          const fname = (file.fieldname || '').toLowerCase();
+          if (fname.includes('offer')) docType = 'Offer Letter';
+          else if (fname.includes('appointment')) docType = 'Appointment Letter';
+          else if (fname.includes('aadhaar')) docType = 'Aadhaar Card';
+          else if (fname.includes('pan')) docType = 'PAN Card';
+          else if (fname.includes('education') || fname.includes('degree') || fname.includes('certificate')) docType = 'Educational Certificate';
+          else if (fname.includes('pf')) docType = 'PF Document';
+          else if (fname.includes('photo') || fname.includes('avatar')) docType = 'Profile Photo';
+          else if (req.body[`doc_type_${file.fieldname}`]) docType = String(req.body[`doc_type_${file.fieldname}`]).trim();
+
+          const prefix = (docType === 'Profile Photo') ? 'avatars' : 'documents';
+          const storageKey = storageService.generateStorageKey({
+            employeeId: trimmedId,
+            originalFilename: file.originalname,
+            prefix,
+          });
+
+          await storageService.saveFile(file.buffer, storageKey);
+          savedStorageKeys.push(storageKey);
+
+          if (docType === 'Profile Photo') {
+            await client.query(
+              'UPDATE public.employees SET profile_photo_url = $1 WHERE employee_id = $2',
+              [storageKey, trimmedId]
+            );
+          } else {
+            const cleanOriginalName = (file.originalname || docType).replace(/[\r\n\t]/g, '').trim();
+            await client.query(
+              `INSERT INTO public.documents (
+                 employee_id, document_type, file_name, storage_key, uploaded_by
+               ) VALUES ($1, $2, $3, $4, $5)`,
+              [trimmedId, docType, cleanOriginalName, storageKey, req.user?.id]
+            );
+          }
+        }
       }
 
       await client.query('COMMIT');
 
+      // Audit logs
       await recordAuditLog({
         userId: req.user.id,
         action: 'EMPLOYEE_UPDATED',
@@ -838,6 +1409,23 @@ const updateEmployeeProfile = async (req, res, next) => {
         },
         req,
       });
+
+      if (bankUpdated && finalBankRecord) {
+        await recordAuditLog({
+          userId: req.user.id,
+          action: 'EMPLOYEE_BANK_DETAILS_UPDATED',
+          entityType: 'BANK_DETAILS',
+          entityId: trimmedId,
+          metadata: {
+            employee_id: trimmedId,
+            bank_name: finalBankRecord.bank_name,
+            account_number_last4: finalBankRecord.account_number_last4,
+            account_type: finalBankRecord.account_type,
+            updated_by: req.user.email,
+          },
+          req,
+        });
+      }
 
       if (parsedWorkingDays !== undefined && parsedWorkingDays !== currentEmp.working_days_per_week) {
         await recordAuditLog({
@@ -857,13 +1445,102 @@ const updateEmployeeProfile = async (req, res, next) => {
         });
       }
 
+      if (department !== undefined && department !== null) {
+        const oldDept = currentEmp.department;
+        const newDept = String(department).trim();
+        if (oldDept && newDept && oldDept.toLowerCase() !== newDept.toLowerCase()) {
+          await recordAuditLog({
+            userId: req.user.id,
+            action: 'EMPLOYEE_DEPARTMENT_CLASSIFIED',
+            entityType: 'EMPLOYEE',
+            entityId: trimmedId,
+            metadata: {
+              employee_id: trimmedId,
+              employee_name: `${currentEmp.first_name || ''} ${currentEmp.last_name || ''}`.trim(),
+              old_department: oldDept,
+              new_department: newDept,
+              admin_email: req.user.email,
+              timestamp: new Date().toISOString(),
+            },
+            req,
+          });
+        }
+      }
+
+      // Fetch refreshed full record
+      const [refreshedEmp, refreshedPayroll, refreshedLeaves, refreshedPf, refreshedDocs, refreshedBank] = await Promise.all([
+        pool.query(
+          `SELECT employee_id, first_name, last_name, email, phone,
+                  TO_CHAR(date_of_birth, 'YYYY-MM-DD') AS date_of_birth,
+                  gender, designation, department,
+                  TO_CHAR(date_of_joining, 'YYYY-MM-DD') AS date_of_joining,
+                  status, status AS employment_status, reporting_manager,
+                  employment_type, address, city, state, postal_code,
+                  emergency_contact_name, emergency_contact_phone,
+                  emergency_contact_relationship, personal_email, work_location,
+                  profile_photo_url, COALESCE(working_days_per_week, 5)::int AS working_days_per_week,
+                  created_at, updated_at
+           FROM public.employees WHERE employee_id = $1`,
+          [trimmedId]
+        ),
+        pool.query('SELECT * FROM public.payroll_profiles WHERE employee_id = $1', [trimmedId]),
+        pool.query('SELECT * FROM public.leave_balances WHERE employee_id = $1', [trimmedId]),
+        pool.query('SELECT * FROM public.pf_details WHERE employee_id = $1', [trimmedId]),
+        pool.query('SELECT id, document_type, file_name, created_at FROM public.documents WHERE employee_id = $1 ORDER BY created_at DESC', [trimmedId]),
+        pool.query(
+          `SELECT id, account_holder_name, bank_name, account_number_last4, ifsc_code,
+                  branch_name, branch_city, branch_state, account_type, verification_status,
+                  admin_remarks, created_at, updated_at
+           FROM public.employee_bank_details WHERE employee_id = $1`,
+          [trimmedId]
+        ),
+      ]);
+
+      const updatedRow = refreshedEmp.rows[0];
+      const hasPhoto = Boolean(updatedRow.profile_photo_url && String(updatedRow.profile_photo_url).trim());
+      const bankRow = refreshedBank?.rows?.[0] || null;
+      const sanitizedBankDetails = bankRow ? {
+        id: bankRow.id,
+        account_holder_name: bankRow.account_holder_name,
+        bank_name: bankRow.bank_name,
+        account_number: maskAccountNumber(bankRow.account_number_last4),
+        account_number_last4: bankRow.account_number_last4,
+        ifsc_code: bankRow.ifsc_code,
+        branch_name: bankRow.branch_name,
+        branch_city: bankRow.branch_city,
+        branch_state: bankRow.branch_state,
+        account_type: bankRow.account_type,
+        verification_status: bankRow.verification_status,
+        admin_remarks: bankRow.admin_remarks,
+        created_at: bankRow.created_at,
+        updated_at: bankRow.updated_at,
+      } : null;
+
+      const responseData = {
+        ...updatedRow,
+        has_profile_photo: hasPhoto,
+        photo_url: hasPhoto ? `/api/admin/employees/${trimmedId}/photo` : null,
+        payroll_profile: refreshedPayroll.rows[0] || null,
+        payroll: refreshedPayroll.rows[0] || null,
+        leave_balances: refreshedLeaves.rows[0] || null,
+        pf_details: refreshedPf.rows[0] || null,
+        pf: refreshedPf.rows[0] || null,
+        bank_details: sanitizedBankDetails,
+        bank: sanitizedBankDetails,
+        documents: refreshedDocs.rows || [],
+      };
+      delete responseData.profile_photo_url;
+
       return res.status(200).json({
         success: true,
-        message: 'Employee profile updated successfully.',
-        data: updateRes.rows[0],
+        message: 'Employee details updated successfully.',
+        data: responseData,
       });
     } catch (err) {
       await client.query('ROLLBACK');
+      for (const key of savedStorageKeys) {
+        await storageService.deleteFile(key).catch(() => {});
+      }
       throw err;
     } finally {
       client.release();
@@ -872,6 +1549,7 @@ const updateEmployeeProfile = async (req, res, next) => {
     next(error);
   }
 };
+
 
 /**
  * Controller to toggle an employee's status (ACTIVE, INACTIVE, SUSPENDED).
@@ -957,18 +1635,19 @@ const updateEmployeeStatus = async (req, res, next) => {
 /**
  * Controller to permanently delete an employee and all linked records and private documents.
  * Security:
- * - Restricted strictly to SUPER_ADMIN role.
+ * - Restricted to ADMIN role.
  * - Requires exact confirmation employee ID and confirmation checkbox.
+ * - Retains legally required statutory payroll records in statutory_payroll_archive (8-year retention policy).
  * - Transactional: fully rolls back if database or file deletion fails.
  * - Does NOT expose internal storage keys or filesystem paths.
  */
 const deleteEmployeePermanently = async (req, res, next) => {
   try {
-    // 1. Role Authorization: Strictly SUPER_ADMIN only
-    if (req.user.role !== 'SUPER_ADMIN') {
+    // 1. Role Authorization: Strictly ADMIN
+    if (req.user.role !== 'ADMIN') {
       return res.status(403).json({
         success: false,
-        message: 'Forbidden. Only SUPER_ADMIN can permanently delete an employee.',
+        message: 'Forbidden. Administrator privileges required to permanently delete an employee.',
       });
     }
 
@@ -1067,9 +1746,29 @@ const deleteEmployeePermanently = async (req, res, next) => {
       await client.query(`DELETE FROM public.attendance WHERE employee_id = $1`, [sanitizedId]);
       await client.query(`DELETE FROM public.leave_requests WHERE employee_id = $1`, [sanitizedId]);
       await client.query(`DELETE FROM public.leave_balances WHERE employee_id = $1`, [sanitizedId]);
+
+      // Archive statutory payroll records before deletion for 8-year compliance retention
+      await client.query(
+        `INSERT INTO public.statutory_payroll_archive (
+           original_payroll_id, employee_id, month, year,
+           basic_salary, hra, allowances, gross_salary,
+           pf_employee, professional_tax, other_deductions,
+           total_deductions, net_salary, processed_at
+         )
+         SELECT 
+           id, employee_id, CAST(month AS VARCHAR), year,
+           basic_salary, hra, allowances, gross_salary,
+           pf_employee, professional_tax, other_deductions,
+           total_deductions, net_salary, COALESCE(processed_at, created_at)
+         FROM public.payroll_records
+         WHERE employee_id = $1`,
+        [sanitizedId]
+      );
+
       await client.query(`DELETE FROM public.payroll_records WHERE employee_id = $1`, [sanitizedId]);
       await client.query(`DELETE FROM public.payroll_profiles WHERE employee_id = $1`, [sanitizedId]);
       await client.query(`DELETE FROM public.pf_details WHERE employee_id = $1`, [sanitizedId]);
+      await client.query(`DELETE FROM public.employee_bank_details WHERE employee_id = $1`, [sanitizedId]);
       await client.query(`DELETE FROM public.employees WHERE employee_id = $1`, [sanitizedId]);
 
       // 8. Delete associated user account if exclusively an employee user
@@ -1170,6 +1869,164 @@ const getAdminEmployeePhoto = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /api/admin/employees/:employeeId/classify-department
+ * Classifies an employee's department to strictly 'IT' or 'Non-IT'.
+ */
+const classifyEmployeeDepartment = async (req, res, next) => {
+  try {
+    const { employeeId } = req.params;
+    const rawDept = req.body.department || req.body.targetDepartment;
+
+    if (!employeeId || typeof employeeId !== 'string') {
+      return res.status(400).json({ success: false, message: 'Invalid employee ID.' });
+    }
+    const trimmedId = employeeId.trim();
+
+    if (!rawDept || typeof rawDept !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: "Department is required and must be either 'IT' or 'Non-IT'.",
+      });
+    }
+
+    const trimmedDept = rawDept.trim();
+    let normalizedDept = null;
+    if (trimmedDept.toLowerCase() === 'it') {
+      normalizedDept = 'IT';
+    } else if (trimmedDept.toLowerCase() === 'non-it') {
+      normalizedDept = 'Non-IT';
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid department classification. Allowed values are strictly 'IT' or 'Non-IT'.",
+      });
+    }
+
+    const empRes = await pool.query(
+      'SELECT employee_id, first_name, last_name, department, email FROM public.employees WHERE employee_id = $1',
+      [trimmedId]
+    );
+    if (empRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: `Employee with ID '${trimmedId}' not found.` });
+    }
+
+    const currentEmp = empRes.rows[0];
+    const oldDept = currentEmp.department;
+
+    await pool.query(
+      'UPDATE public.employees SET department = $1, updated_at = NOW() WHERE employee_id = $2',
+      [normalizedDept, trimmedId]
+    );
+
+    // Audit log
+    await recordAuditLog({
+      userId: req.user.id,
+      action: 'EMPLOYEE_DEPARTMENT_CLASSIFIED',
+      entityType: 'EMPLOYEE',
+      entityId: trimmedId,
+      metadata: {
+        employee_id: trimmedId,
+        employee_name: `${currentEmp.first_name || ''} ${currentEmp.last_name || ''}`.trim(),
+        old_department: oldDept,
+        new_department: normalizedDept,
+        admin_email: req.user.email,
+        timestamp: new Date().toISOString(),
+      },
+      req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Employee ${trimmedId} department successfully classified as ${normalizedDept}.`,
+      data: {
+        employee_id: trimmedId,
+        department: normalizedDept,
+        previous_department: oldDept,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/admin/employees/classify-departments
+ * Bulk classifies multiple employees' departments to strictly 'IT' or 'Non-IT'.
+ */
+const bulkClassifyDepartments = async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const { classifications } = req.body;
+    if (!Array.isArray(classifications) || classifications.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'classifications array is required.',
+      });
+    }
+
+    await client.query('BEGIN');
+    const results = [];
+
+    for (const item of classifications) {
+      const { employee_id, department } = item;
+      if (!employee_id || !department) continue;
+      const trimmedId = String(employee_id).trim();
+      const trimmedDept = String(department).trim();
+      let normalizedDept = null;
+      if (trimmedDept.toLowerCase() === 'it') normalizedDept = 'IT';
+      else if (trimmedDept.toLowerCase() === 'non-it') normalizedDept = 'Non-IT';
+      else continue;
+
+      const empRes = await client.query(
+        'SELECT employee_id, first_name, last_name, department FROM public.employees WHERE employee_id = $1',
+        [trimmedId]
+      );
+      if (empRes.rows.length === 0) continue;
+
+      const oldDept = empRes.rows[0].department;
+      await client.query(
+        'UPDATE public.employees SET department = $1, updated_at = NOW() WHERE employee_id = $2',
+        [normalizedDept, trimmedId]
+      );
+
+      await recordAuditLog({
+        userId: req.user.id,
+        action: 'EMPLOYEE_DEPARTMENT_CLASSIFIED',
+        entityType: 'EMPLOYEE',
+        entityId: trimmedId,
+        metadata: {
+          employee_id: trimmedId,
+          employee_name: `${empRes.rows[0].first_name || ''} ${empRes.rows[0].last_name || ''}`.trim(),
+          old_department: oldDept,
+          new_department: normalizedDept,
+          admin_email: req.user.email,
+          timestamp: new Date().toISOString(),
+        },
+        req,
+      });
+
+      results.push({
+        employee_id: trimmedId,
+        department: normalizedDept,
+        previous_department: oldDept,
+      });
+    }
+
+    await client.query('COMMIT');
+    return res.status(200).json({
+      success: true,
+      message: `Successfully classified ${results.length} employee(s).`,
+      data: results,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
   getEmployees,
   getEmployeeById,
@@ -1178,6 +2035,9 @@ module.exports = {
   updateEmployeeProfile,
   updateEmployeeStatus,
   deleteEmployeePermanently,
+  classifyEmployeeDepartment,
+  bulkClassifyDepartments,
 };
+
 
 

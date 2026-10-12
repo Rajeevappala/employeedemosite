@@ -1,0 +1,885 @@
+/* ==========================================================================
+   Admin Employee Edit Page Styles
+   ========================================================================== */
+
+.admin-edit-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding-bottom: 3rem;
+}
+
+/* Page Navigation & Header */
+.admin-edit-header-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.admin-edit-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-edit-back-btn:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+
+.admin-edit-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-edit-page-title {
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.025em;
+}
+
+.admin-edit-page-subtitle {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* Employee Identity Summary Card */
+.admin-edit-identity-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+.admin-edit-identity-left {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.admin-edit-identity-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+  box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2);
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 2px solid #ffffff;
+}
+
+.admin-edit-identity-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-edit-identity-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-edit-identity-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.admin-edit-identity-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-edit-id-badge {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #1e40af;
+  background-color: #dbeafe;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.375rem;
+}
+
+.admin-edit-meta-separator {
+  color: #94a3b8;
+  font-size: 0.875rem;
+}
+
+.admin-edit-meta-sub {
+  font-size: 0.875rem;
+  color: #475569;
+  font-weight: 500;
+}
+
+.admin-edit-identity-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.admin-edit-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.admin-edit-status-badge.status-active {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.admin-edit-status-badge.status-inactive,
+.admin-edit-status-badge.status-suspended {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.admin-edit-status-badge.status-probation {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+/* Stepper Progress Bar */
+.admin-edit-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  gap: 0.5rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.admin-edit-step-btn {
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.admin-edit-step-btn:hover {
+  background-color: #f8fafc;
+}
+
+.admin-edit-step-btn.active {
+  background-color: #eff6ff;
+}
+
+.admin-edit-step-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  background-color: #e2e8f0;
+  color: #64748b;
+  transition: all 0.2s ease;
+}
+
+.admin-edit-step-btn.completed .admin-edit-step-circle {
+  background-color: #10b981;
+  color: #ffffff;
+}
+
+.admin-edit-step-btn.active .admin-edit-step-circle {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+.admin-edit-step-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.admin-edit-step-btn.active .admin-edit-step-label {
+  color: #1e40af;
+}
+
+.admin-edit-step-btn.completed .admin-edit-step-label {
+  color: #0f172a;
+}
+
+/* Card Body */
+.admin-edit-card {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.admin-edit-step-header {
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 1rem;
+}
+
+.admin-edit-step-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 0.25rem 0;
+}
+
+.admin-edit-step-desc {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* Fields Grid */
+.admin-edit-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem 1.5rem;
+}
+
+.admin-edit-form-grid.grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-edit-full-width {
+  grid-column: 1 / -1;
+}
+
+.admin-edit-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.admin-edit-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-edit-req-star {
+  color: #ef4444;
+  margin-left: 0.25rem;
+}
+
+.admin-edit-readonly-badge {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background-color: #f1f5f9;
+  color: #64748b;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+}
+
+.admin-edit-input,
+.admin-edit-select,
+.admin-edit-textarea {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: #0f172a;
+  background-color: #ffffff;
+  font-family: inherit;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.admin-edit-input:focus,
+.admin-edit-select:focus,
+.admin-edit-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.admin-edit-input:disabled,
+.admin-edit-input.read-only {
+  background-color: #f8fafc;
+  color: #64748b;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+}
+
+.admin-edit-field-note {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.125rem;
+}
+
+/* Calculations Banner (Salary) */
+.admin-edit-calc-banner {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  text-align: center;
+}
+
+.admin-edit-calc-stat-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+.admin-edit-calc-stat-val {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.admin-edit-calc-stat-val.net-pay {
+  color: #16a34a;
+}
+
+.admin-edit-calc-stat-val.deductions {
+  color: #dc2626;
+}
+
+/* Document List & Cards */
+.admin-edit-docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admin-edit-doc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  background-color: #ffffff;
+  transition: all 0.15s ease;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.admin-edit-doc-row:hover {
+  border-color: #cbd5e1;
+  background-color: #f8fafc;
+}
+
+.admin-edit-doc-left {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.admin-edit-doc-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 0.375rem;
+  background-color: #eff6ff;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.125rem;
+  flex-shrink: 0;
+}
+
+.admin-edit-doc-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.admin-edit-doc-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.admin-edit-doc-sub {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.admin-edit-doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-edit-doc-btn {
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  color: #334155;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.admin-edit-doc-btn:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+/* Upload Dropzones */
+.admin-edit-upload-box {
+  border: 2px dashed #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  background-color: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  transition: all 0.15s ease;
+}
+
+.admin-edit-upload-box:hover {
+  border-color: #94a3b8;
+  background-color: #f1f5f9;
+}
+
+.admin-edit-file-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #dbeafe;
+  color: #1e40af;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.admin-edit-file-remove {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-weight: bold;
+  padding: 0 0.25rem;
+}
+
+/* Review Changes Step */
+.admin-edit-review-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.admin-edit-diff-box {
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+}
+
+.admin-edit-diff-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #166534;
+  margin: 0 0 0.5rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-edit-diff-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-edit-diff-card {
+  background-color: #ffffff;
+  border: 1px solid #bbf7d0;
+  border-radius: 0.375rem;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.8125rem;
+}
+
+.admin-edit-diff-label {
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 0.25rem;
+}
+
+.admin-edit-diff-vals {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-edit-old-val {
+  color: #991b1b;
+  text-decoration: line-through;
+  background-color: #fee2e2;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+}
+
+.admin-edit-new-val {
+  color: #166534;
+  font-weight: 700;
+  background-color: #dcfce7;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+}
+
+.admin-edit-no-diff {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  font-size: 0.875rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.admin-edit-review-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.admin-edit-review-section-header {
+  background-color: #f8fafc;
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: #334155;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.admin-edit-review-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  padding: 1rem;
+}
+
+.admin-edit-review-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.admin-edit-review-item-label {
+  color: #64748b;
+}
+
+.admin-edit-review-item-val {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+/* Actions Bar */
+.admin-edit-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 1.5rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.admin-edit-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.admin-edit-btn-secondary {
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  color: #334155;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.admin-edit-btn-secondary:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+.admin-edit-btn-primary {
+  padding: 0.625rem 1.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid #2563eb;
+  background-color: #2563eb;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: inherit;
+}
+
+.admin-edit-btn-primary:hover:not(:disabled) {
+  background-color: #1d4ed8;
+  border-color: #1e40af;
+}
+
+.admin-edit-btn-primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.admin-edit-btn-save {
+  background-color: #16a34a;
+  border-color: #15803d;
+}
+
+.admin-edit-btn-save:hover:not(:disabled) {
+  background-color: #15803d;
+  border-color: #166534;
+}
+
+/* Error and Toast Messages */
+.admin-edit-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  background-color: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 0.5rem;
+  color: #991b1b;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.admin-edit-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem 1.25rem;
+  background-color: #ecfdf5;
+  border: 1px solid #6ee7b7;
+  border-radius: 0.5rem;
+  color: #065f46;
+  font-size: 0.875rem;
+  font-weight: 600;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+/* Unsaved Changes & Preview Modals */
+.admin-edit-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  background-color: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.admin-edit-modal-box {
+  background-color: #ffffff;
+  border-radius: 0.75rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 480px;
+  padding: 1.75rem;
+  border: 1px solid #e2e8f0;
+}
+
+.admin-edit-modal-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 0.5rem 0;
+}
+
+.admin-edit-modal-desc {
+  font-size: 0.875rem;
+  color: #64748b;
+  line-height: 1.5;
+  margin: 0 0 1.5rem 0;
+}
+
+.admin-edit-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.admin-edit-discard-btn {
+  background-color: #dc2626;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+
+.admin-edit-discard-btn:hover {
+  background-color: #b91c1c;
+}
+
+/* Document Preview Modal */
+.admin-edit-preview-modal {
+  max-width: 800px;
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-edit-preview-body {
+  flex: 1;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  margin: 1rem 0;
+}
+
+.admin-edit-preview-body iframe,
+.admin-edit-preview-body img {
+  width: 100%;
+  height: 500px;
+  border: none;
+  object-fit: contain;
+}
+
+/* Loading & Skeletons */
+.admin-edit-skeleton-card {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 3rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.admin-edit-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive Breakpoints */
+@media (max-width: 768px) {
+  .admin-edit-form-grid,
+  .admin-edit-form-grid.grid-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-edit-calc-banner {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-edit-review-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-edit-identity-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .admin-edit-stepper {
+    justify-content: flex-start;
+  }
+}

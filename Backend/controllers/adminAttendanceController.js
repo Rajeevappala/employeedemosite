@@ -50,7 +50,7 @@ const VALID_STATUSES = [
  */
 const getAdminAttendance = async (req, res, next) => {
   try {
-    const { date, search, status, employee_id, month } = req.query;
+    const { date, search, status, employee_id, month, department } = req.query;
 
     // If month is requested without a specific date, delegate directly to monthly attendance
     if (month && !date) {
@@ -142,6 +142,13 @@ const getAdminAttendance = async (req, res, next) => {
       queryParams.push(employee_id.trim());
       const empIdx = queryParams.length;
       conditions.push(`e.employee_id = $${empIdx}`);
+    }
+
+    // Department filter (IT / Non-IT)
+    if (department && typeof department === 'string' && department.trim() !== '' && !['all', 'all departments'].includes(department.trim().toLowerCase())) {
+      queryParams.push(department.trim());
+      const deptIdx = queryParams.length;
+      conditions.push(`e.department = $${deptIdx}`);
     }
 
     // Status filter
@@ -443,6 +450,235 @@ const markAttendance = async (req, res, next) => {
   }
 };
 
+/**
+ * Controller to bulk mark Holiday for all active employees on a selected date.
+ * Security & Business Rules:
+ * - Strictly restricted to ADMIN and SUPER_ADMIN roles.
+ * - Authenticated admin ID is derived strictly from req.user.id.
+ * - Validates strict YYYY-MM-DD calendar date (400 if invalid).
+ * - Sourced strictly from public.employees where status = 'ACTIVE'.
+ * - Inactive and suspended employees are NOT affected.
+ * - If ALL active employees are already marked 'Holiday', returns idempotent success with 0 changes.
+ * - If existing non-Holiday attendance records exist and confirm_overwrite is not true:
+ *   returns 409 Conflict with require_confirmation: true and detailed breakdown.
+ * - Uses atomic PostgreSQL transaction (BEGIN / COMMIT / ROLLBACK).
+ * - Upserts using ON CONFLICT (employee_id, attendance_date) DO UPDATE to respect unique constraint.
+ * - Preserves status strictly as 'Holiday'.
+ * - Records audit log 'ORGANIZATION_HOLIDAY_MARKED'.
+ */
+const markHoliday = async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const { attendance_date, remarks, holiday_name, confirm_overwrite } = req.body;
+    const adminUserId = req.user?.id;
+
+    // 1. Validate attendance_date presence
+    if (!attendance_date || typeof attendance_date !== 'string' || attendance_date.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'attendance_date is required in YYYY-MM-DD format.',
+      });
+    }
+
+    const trimmedDate = attendance_date.trim();
+
+    // 2. Validate calendar date format
+    if (!isValidDateString(trimmedDate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid attendance_date format. Expected a valid calendar date in YYYY-MM-DD format (e.g., 2026-10-07).',
+      });
+    }
+
+    // 3. Sanitize optional remarks / holiday_name
+    let sanitizedRemarks = null;
+    const rawRemarks = remarks !== undefined && remarks !== null ? remarks : holiday_name;
+    if (rawRemarks !== undefined && rawRemarks !== null) {
+      if (typeof rawRemarks !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: 'remarks must be a string.',
+        });
+      }
+      const trimmedRemarks = rawRemarks.trim();
+      if (trimmedRemarks.length > 500) {
+        return res.status(400).json({
+          success: false,
+          message: 'remarks cannot exceed 500 characters.',
+        });
+      }
+      sanitizedRemarks = trimmedRemarks.length > 0 ? trimmedRemarks : null;
+    }
+    const finalRemarks = sanitizedRemarks || 'Organization Holiday';
+
+    // 4. Fetch all ACTIVE employees
+    const activeEmployeesResult = await client.query(`
+      SELECT employee_id
+      FROM public.employees
+      WHERE status = 'ACTIVE'
+      ORDER BY employee_id ASC
+    `);
+
+    const activeEmployees = activeEmployeesResult.rows;
+    const totalActive = activeEmployees.length;
+
+    if (totalActive === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active employees found in the organization.',
+      });
+    }
+
+    // 5. Check existing attendance records for active employees on trimmedDate
+    const existingRecordsResult = await client.query(`
+      SELECT 
+        a.status,
+        COUNT(*)::int AS count
+      FROM public.attendance a
+      JOIN public.employees e ON e.employee_id = a.employee_id
+      WHERE e.status = 'ACTIVE'
+        AND a.attendance_date = $1::date
+      GROUP BY a.status;
+    `, [trimmedDate]);
+
+    let totalExisting = 0;
+    let holidayCount = 0;
+    let nonHolidayCount = 0;
+    const breakdown = {};
+
+    existingRecordsResult.rows.forEach((row) => {
+      const c = parseInt(row.count, 10) || 0;
+      totalExisting += c;
+      if (row.status === 'Holiday') {
+        holidayCount += c;
+      } else {
+        nonHolidayCount += c;
+        breakdown[row.status] = c;
+      }
+    });
+
+    // 6. Idempotency check: If all active employees are already marked Holiday
+    if (totalExisting === totalActive && holidayCount === totalActive) {
+      return res.status(200).json({
+        success: true,
+        already_marked: true,
+        message: `${trimmedDate} is already marked as Holiday for all active employees.`,
+        data: {
+          attendance_date: trimmedDate,
+          status: 'Holiday',
+          employees_affected: totalActive,
+          created: 0,
+          updated: 0,
+        },
+      });
+    }
+
+    // 7. Safety check: If non-Holiday records already exist and confirm_overwrite is not true
+    if (nonHolidayCount > 0 && !confirm_overwrite) {
+      return res.status(409).json({
+        success: false,
+        require_confirmation: true,
+        message: `Attendance already exists for ${nonHolidayCount} employee${nonHolidayCount === 1 ? '' : 's'}. Changing the date to Holiday will replace their current attendance status.`,
+        data: {
+          attendance_date: trimmedDate,
+          status: 'Holiday',
+          total_active: totalActive,
+          existing_count: nonHolidayCount,
+          breakdown,
+        },
+      });
+    }
+
+    // 8. Resolve marked_by safely
+    let markedBy = null;
+    if (adminUserId) {
+      const userCheck = await client.query('SELECT id FROM public.users WHERE id = $1', [adminUserId]);
+      if (userCheck.rows.length > 0) {
+        markedBy = userCheck.rows[0].id;
+      }
+    }
+
+    // 9. Execute within an atomic PostgreSQL transaction
+    await client.query('BEGIN');
+
+    const createdCount = totalActive - totalExisting;
+    const updatedCount = totalExisting;
+
+    const upsertQuery = `
+      INSERT INTO public.attendance (
+        employee_id,
+        attendance_date,
+        status,
+        remarks,
+        marked_by,
+        marked_at,
+        updated_at
+      )
+      SELECT
+        e.employee_id,
+        $1::date,
+        'Holiday',
+        $2,
+        $3,
+        NOW(),
+        NOW()
+      FROM public.employees e
+      WHERE e.status = 'ACTIVE'
+      ON CONFLICT (employee_id, attendance_date)
+      DO UPDATE SET
+        status = 'Holiday',
+        remarks = EXCLUDED.remarks,
+        marked_by = EXCLUDED.marked_by,
+        updated_at = NOW();
+    `;
+
+    await client.query(upsertQuery, [
+      trimmedDate,
+      finalRemarks,
+      markedBy,
+    ]);
+
+    await client.query('COMMIT');
+
+    // 10. Record immutable audit log
+    await recordAuditLog({
+      action: 'ORGANIZATION_HOLIDAY_MARKED',
+      entityType: 'ATTENDANCE',
+      metadata: {
+        attendance_date: trimmedDate,
+        status: 'Holiday',
+        employees_affected: totalActive,
+        created: createdCount,
+        updated: updatedCount,
+        remarks: finalRemarks,
+        admin_email: req.user?.email,
+      },
+      req,
+    }).catch(() => {});
+
+    return res.status(200).json({
+      success: true,
+      message: 'Holiday marked successfully for all active employees.',
+      data: {
+        attendance_date: trimmedDate,
+        status: 'Holiday',
+        employees_affected: totalActive,
+        created: createdCount,
+        updated: updatedCount,
+      },
+    });
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rbErr) {
+      // ignore rollback error if already aborted
+    }
+    next(error);
+  } finally {
+    client.release();
+  }
+};
+
 const {
   updateAttendance,
   updateAdminAttendance,
@@ -454,6 +690,7 @@ const {
 module.exports = {
   getAdminAttendance,
   markAttendance,
+  markHoliday,
   updateAttendance,
   updateAdminAttendance: updateAttendance,
   markAllPresent,

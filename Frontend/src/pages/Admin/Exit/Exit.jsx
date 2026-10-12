@@ -21,6 +21,38 @@ function formatINR(val) {
   })}`;
 }
 
+function toDateInputValue(val) {
+  if (!val) return '';
+  if (typeof val === 'string' && val.includes('T')) {
+    return val.split('T')[0];
+  }
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val.trim())) {
+    return val.trim();
+  }
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getTodayDateString() {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatFileSize(bytes) {
+  if (!bytes || isNaN(bytes)) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
 export default function AdminExit() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +68,7 @@ export default function AdminExit() {
 
   // Detail Modal / Drawer State
   const [selectedReq, setSelectedReq] = useState(null);
-  const [modalTab, setModalTab] = useState('details'); // 'details' | 'clearance' | 'fnf'
+  const [modalTab, setModalTab] = useState('details'); // 'details' | 'clearance' | 'fnf' | 'documents'
 
   // Review Form
   const [reviewAction, setReviewAction] = useState('APPROVE');
@@ -65,7 +97,39 @@ export default function AdminExit() {
   // Finalization Confirmation
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
-  const [downloadingDoc, setDownloadingDoc] = useState(null);
+
+  // Exit Documents State (Part 8-15, 19-21)
+  const [documentsData, setDocumentsData] = useState({
+    active_documents: [],
+    standard_slots: [],
+    replaced_history: [],
+  });
+  const [loadingDocs, setLoadingDocs] = useState(false);
+  const [docsError, setDocsError] = useState('');
+  const [docsSuccess, setDocsSuccess] = useState('');
+
+  // Upload / Replace Modal
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadMode, setUploadMode] = useState('CREATE'); // 'CREATE' | 'REPLACE'
+  const [uploadDocType, setUploadDocType] = useState('Relieving Letter');
+  const [uploadCustomType, setUploadCustomType] = useState('');
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadReleaseDate, setUploadReleaseDate] = useState('');
+  const [uploadRemarks, setUploadRemarks] = useState('');
+  const [uploadModalError, setUploadModalError] = useState('');
+  const [submittingDoc, setSubmittingDoc] = useState(false);
+
+  // Change Release Date Modal
+  const [showChangeDateModal, setShowChangeDateModal] = useState(false);
+  const [changeDateDoc, setChangeDateDoc] = useState(null);
+  const [newReleaseDate, setNewReleaseDate] = useState('');
+  const [changeDateError, setChangeDateError] = useState('');
+  const [updatingDate, setUpdatingDate] = useState(false);
+
+  // Document action progress states
+  const [viewingDocId, setViewingDocId] = useState(null);
+  const [downloadingDocId, setDownloadingDocId] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -118,20 +182,45 @@ export default function AdminExit() {
     };
   }, [statusFilter, departmentFilter, search, page]);
 
+  const fetchDocuments = useCallback(async (reqId) => {
+    if (!reqId) return;
+    try {
+      setLoadingDocs(true);
+      setDocsError('');
+      const res = await api.admin.exit.getDocuments(reqId);
+      if (res && res.success) {
+        setDocumentsData(res.data);
+      }
+    } catch (err) {
+      setDocsError(err?.message || 'Failed to load exit documents.');
+    } finally {
+      setLoadingDocs(false);
+    }
+  }, []);
+
   const openDetailModal = async (req) => {
     setSelectedReq(req);
     setModalTab('details');
     setError('');
     setSuccess('');
-    setReviewAction(req.status === 'SUBMITTED' ? 'UNDER_REVIEW' : 'APPROVE');
+    setDocsError('');
+    setDocsSuccess('');
+    setReviewAction(
+      req.status === 'SUBMITTED' || req.status === 'UNDER_REVIEW'
+        ? 'APPROVE'
+        : req.status === 'APPROVED'
+        ? 'APPROVE'
+        : 'REJECT'
+    );
     setApprovedDate(
-      req.approved_relieving_date
-        ? new Date(req.approved_relieving_date).toISOString().split('T')[0]
-        : req.requested_relieving_date
-        ? new Date(req.requested_relieving_date).toISOString().split('T')[0]
-        : ''
+      toDateInputValue(req.approved_relieving_date || req.requested_relieving_date)
     );
     setAdminRemarks(req.admin_remarks || '');
+
+    // Fetch documents if approved or completed
+    if (req.status === 'APPROVED' || req.status === 'COMPLETED') {
+      fetchDocuments(req.id);
+    }
 
     // Initialize clearances input
     const clrStatus = {};
@@ -173,6 +262,9 @@ export default function AdminExit() {
     setSelectedReq(null);
     setFnfBreakdown(null);
     setShowFinalizeModal(false);
+    setShowUploadModal(false);
+    setShowChangeDateModal(false);
+    setDocumentsData({ active_documents: [], standard_slots: [], replaced_history: [] });
   };
 
   const handleReviewSubmit = async (e) => {
@@ -182,15 +274,24 @@ export default function AdminExit() {
       setSubmittingReview(true);
       setError('');
       setSuccess('');
+
+      if (reviewAction === 'REJECT' && (!adminRemarks || adminRemarks.trim().length < 5)) {
+        setError('A reason (at least 5 characters) is required when declining a resignation.');
+        return;
+      }
+
       const res = await api.admin.exit.reviewRequest(selectedReq.id, {
         action: reviewAction,
         approved_relieving_date: reviewAction === 'APPROVE' ? approvedDate : undefined,
         admin_remarks: adminRemarks,
       });
       if (res && res.success) {
-        setSuccess(`Exit request status updated.`);
+        setSuccess(
+          reviewAction === 'APPROVE'
+            ? 'Resignation accepted. Approved Last Working Day recorded.'
+            : 'Resignation declined. Clearance and exit processing halted.'
+        );
         await fetchRequests();
-        // Refresh selected req in modal
         setSelectedReq((prev) => ({ ...prev, ...res.data }));
       }
     } catch (err) {
@@ -218,7 +319,6 @@ export default function AdminExit() {
 
       if (res && res.success) {
         setSuccess(`Clearance updated successfully.`);
-        // Update local state in selectedReq
         setSelectedReq((prev) => {
           const updatedClrs = (prev.clearances || []).map((c) =>
             c.id === clearanceId ? { ...c, ...res.data } : c
@@ -277,10 +377,11 @@ export default function AdminExit() {
         other_deductions: fnfInputs.other_deductions,
       });
       if (res && res.success) {
-        setSuccess(`Offboarding finalized successfully. Employee account deactivated.`);
+        setSuccess(`Offboarding finalized successfully. Employee account deactivated. Exit documents can be managed in the Exit Documents tab.`);
         setShowFinalizeModal(false);
         setSelectedReq((prev) => ({ ...prev, status: 'COMPLETED' }));
         await fetchRequests();
+        await fetchDocuments(selectedReq.id);
       }
     } catch (err) {
       setError(err?.message || 'Failed to finalize offboarding.');
@@ -289,24 +390,159 @@ export default function AdminExit() {
     }
   };
 
-  const handleAdminDownload = async (docType, apiFunc) => {
-    if (!selectedReq) return;
+  // Exit Document Action Handlers
+  const openUploadModal = (docType = 'Relieving Letter') => {
+    setUploadMode('CREATE');
+    setUploadDocType(docType);
+    setUploadCustomType('');
+    setUploadFile(null);
+    const minD = toDateInputValue(selectedReq?.approved_relieving_date || selectedReq?.requested_relieving_date);
+    setUploadReleaseDate(minD || getTodayDateString());
+    setUploadRemarks('');
+    setUploadModalError('');
+    setShowUploadModal(true);
+  };
+
+  const openReplaceModal = (doc) => {
+    setUploadMode('REPLACE');
+    setUploadDocType(doc.document_type);
+    setUploadCustomType('');
+    setUploadFile(null);
+    setUploadReleaseDate(toDateInputValue(doc.release_date));
+    setUploadRemarks(doc.remarks || '');
+    setUploadModalError('');
+    setShowUploadModal(true);
+  };
+
+  const openChangeDateModal = (doc) => {
+    setChangeDateDoc(doc);
+    setNewReleaseDate(toDateInputValue(doc.release_date));
+    setChangeDateError('');
+    setShowChangeDateModal(true);
+  };
+
+  const handleViewExitDoc = async (doc) => {
     try {
-      setDownloadingDoc(docType);
-      setError('');
-      const blob = await apiFunc(selectedReq.id);
+      setViewingDocId(doc.id);
+      setDocsError('');
+      const blob = await api.admin.exit.viewDocument(doc.id);
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err) {
+      setDocsError(err?.message || 'Failed to view document.');
+    } finally {
+      setViewingDocId(null);
+    }
+  };
+
+  const handleDownloadExitDoc = async (doc) => {
+    try {
+      setDownloadingDocId(doc.id);
+      setDocsError('');
+      const blob = await api.admin.exit.downloadDocument(doc.id);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${selectedReq.employee_id}_${docType.replace(/\s+/g, '_')}.pdf`;
+      a.download = doc.document_name || `${doc.document_type.replace(/\s+/g, '_')}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err?.message || `Failed to download ${docType}.`);
+      setDocsError(err?.message || 'Failed to download document.');
     } finally {
-      setDownloadingDoc(null);
+      setDownloadingDocId(null);
+    }
+  };
+
+  const handleUploadDocumentSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedReq) return;
+    setUploadModalError('');
+
+    const resolvedType = uploadDocType === 'Custom' ? uploadCustomType.trim() : uploadDocType;
+    if (!resolvedType) {
+      setUploadModalError('Please specify the document type.');
+      return;
+    }
+
+    if (!uploadFile) {
+      setUploadModalError('Please select a PDF file to upload.');
+      return;
+    }
+
+    if (!uploadFile.name.toLowerCase().endsWith('.pdf') || uploadFile.type !== 'application/pdf') {
+      setUploadModalError('Only valid PDF files (.pdf) are accepted.');
+      return;
+    }
+
+    if (uploadFile.size > 10 * 1024 * 1024) {
+      setUploadModalError('File size exceeds the 10MB limit.');
+      return;
+    }
+
+    if (!uploadReleaseDate) {
+      setUploadModalError('Please select a release date for this document.');
+      return;
+    }
+
+    const lwd = toDateInputValue(selectedReq.approved_relieving_date || selectedReq.requested_relieving_date);
+    if (lwd && uploadReleaseDate < lwd) {
+      setUploadModalError(`Release date (${uploadReleaseDate}) cannot be earlier than Last Working Day (${lwd}).`);
+      return;
+    }
+
+    try {
+      setSubmittingDoc(true);
+      const formData = new FormData();
+      formData.append('document', uploadFile);
+      formData.append('document_type', resolvedType);
+      formData.append('release_date', uploadReleaseDate);
+      if (uploadRemarks) {
+        formData.append('remarks', uploadRemarks.trim());
+      }
+
+      const res = await api.admin.exit.uploadDocument(selectedReq.id, formData);
+      if (res && res.success) {
+        setDocsSuccess(`"${resolvedType}" uploaded successfully. Scheduled for release on ${formatDate(uploadReleaseDate)}.`);
+        setShowUploadModal(false);
+        await fetchDocuments(selectedReq.id);
+      }
+    } catch (err) {
+      setUploadModalError(err?.message || 'Failed to upload exit document.');
+    } finally {
+      setSubmittingDoc(false);
+    }
+  };
+
+  const handleUpdateReleaseDateSubmit = async (e) => {
+    e.preventDefault();
+    if (!changeDateDoc || !selectedReq) return;
+    setChangeDateError('');
+
+    if (!newReleaseDate) {
+      setChangeDateError('Please choose a valid release date.');
+      return;
+    }
+
+    const lwd = toDateInputValue(selectedReq.approved_relieving_date || selectedReq.requested_relieving_date);
+    if (lwd && newReleaseDate < lwd) {
+      setChangeDateError(`Release date (${newReleaseDate}) cannot be earlier than Last Working Day (${lwd}).`);
+      return;
+    }
+
+    try {
+      setUpdatingDate(true);
+      const res = await api.admin.exit.updateReleaseDate(changeDateDoc.id, newReleaseDate);
+      if (res && res.success) {
+        setDocsSuccess(`Release date updated for "${changeDateDoc.document_type}" to ${formatDate(newReleaseDate)}.`);
+        setShowChangeDateModal(false);
+        await fetchDocuments(selectedReq.id);
+      }
+    } catch (err) {
+      setChangeDateError(err?.message || 'Failed to update release date.');
+    } finally {
+      setUpdatingDate(false);
     }
   };
 
@@ -321,7 +557,7 @@ export default function AdminExit() {
         <div>
           <h1 className="admin-exit-title">Employee Offboarding & Exit Management</h1>
           <p className="admin-exit-subtitle">
-            Review resignations, coordinate departmental clearances, compute F&F settlements, and issue official relieving letters.
+            Review resignations, coordinate departmental clearances, compute F&F settlements, and manage scheduled exit documents.
           </p>
         </div>
       </div>
@@ -408,7 +644,7 @@ export default function AdminExit() {
                   <th>Employee</th>
                   <th>Department</th>
                   <th>Resignation Date</th>
-                  <th>Relieving Date</th>
+                  <th>Last Working Day</th>
                   <th>Clearances</th>
                   <th>Status</th>
                   <th>Action</th>
@@ -446,7 +682,7 @@ export default function AdminExit() {
                       </td>
                       <td>
                         <span className={`status-badge badge-${r.status.toLowerCase()}`}>
-                          {r.status.replace('_', ' ')}
+                          {r.status === 'APPROVED' ? 'Accepted' : r.status === 'REJECTED' ? 'Declined' : r.status === 'SUBMITTED' ? 'Pending Review' : r.status.replace('_', ' ')}
                         </span>
                       </td>
                       <td>
@@ -501,7 +737,7 @@ export default function AdminExit() {
             <div className="drawer-header">
               <div>
                 <span className={`status-badge badge-${selectedReq.status.toLowerCase()}`}>
-                  {selectedReq.status.replace('_', ' ')}
+                  {selectedReq.status === 'APPROVED' ? 'Accepted' : selectedReq.status === 'REJECTED' ? 'Declined' : selectedReq.status === 'SUBMITTED' ? 'Pending Review' : selectedReq.status.replace('_', ' ')}
                 </span>
                 <h2 className="drawer-title">{selectedReq.employee_name} ({selectedReq.employee_id})</h2>
                 <p className="drawer-meta">{selectedReq.department} &bull; {selectedReq.designation}</p>
@@ -532,6 +768,16 @@ export default function AdminExit() {
               >
                 3. F&F Settlement
               </button>
+              <button
+                type="button"
+                className={`drawer-tab ${modalTab === 'documents' ? 'active-tab' : ''}`}
+                onClick={() => {
+                  setModalTab('documents');
+                  fetchDocuments(selectedReq.id);
+                }}
+              >
+                4. Exit Documents
+              </button>
             </div>
 
             <div className="drawer-body">
@@ -539,84 +785,154 @@ export default function AdminExit() {
               {modalTab === 'details' && (
                 <div className="tab-pane">
                   <div className="info-block">
-                    <h3 className="section-title">Resignation Submission</h3>
+                    <h3 className="section-title">Resignation Request Details</h3>
                     <div className="grid-2col">
                       <div>
-                        <span className="lbl">Submission Date</span>
+                        <span className="lbl">Employee</span>
+                        <p className="val">{selectedReq.employee_name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <span className="lbl">Employee ID</span>
+                        <p className="val">{selectedReq.employee_id}</p>
+                      </div>
+                      <div>
+                        <span className="lbl">Resignation Date</span>
                         <p className="val">{formatDate(selectedReq.resignation_date)}</p>
                       </div>
                       <div>
-                        <span className="lbl">Requested Relieving Date</span>
+                        <span className="lbl">Requested Last Working Day</span>
                         <p className="val">{formatDate(selectedReq.requested_relieving_date)}</p>
                       </div>
+                      <div>
+                        <span className="lbl">Approved Last Working Day</span>
+                        <p className="val font-semibold">
+                          {selectedReq.approved_relieving_date ? formatDate(selectedReq.approved_relieving_date) : 'Pending Admin Decision'}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="lbl">Resignation Status</span>
+                        <p className="val">
+                          <span className={`status-badge badge-${selectedReq.status.toLowerCase()}`}>
+                            {selectedReq.status === 'APPROVED' ? 'Accepted' : selectedReq.status === 'REJECTED' ? 'Declined' : selectedReq.status === 'SUBMITTED' ? 'Pending Admin Review' : selectedReq.status.replace('_', ' ')}
+                          </span>
+                        </p>
+                      </div>
                       <div className="span-2">
-                        <span className="lbl">Reason for Separation</span>
+                        <span className="lbl">Reason for Resignation</span>
                         <p className="val reason-text">{selectedReq.reason}</p>
                       </div>
+                      {selectedReq.admin_remarks && (
+                        <div className="span-2">
+                          <span className="lbl">Admin Remarks / Reason</span>
+                          <p className="val remarks-text">{selectedReq.admin_remarks}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {selectedReq.status !== 'COMPLETED' && selectedReq.status !== 'WITHDRAWN' && (
-                    <div className="info-block">
+                  {(selectedReq.status === 'SUBMITTED' || selectedReq.status === 'UNDER_REVIEW') && (
+                    <div className="info-block review-block">
                       <h3 className="section-title">Review Actions</h3>
-                      <form onSubmit={handleReviewSubmit} className="review-form">
-                        <div className="form-row">
-                          <div className="form-col">
-                            <label htmlFor="review_action" className="lbl">Select Action</label>
-                            <select
-                              id="review_action"
-                              className="filter-select"
-                              value={reviewAction}
-                              onChange={(e) => setReviewAction(e.target.value)}
-                            >
-                              {selectedReq.status === 'SUBMITTED' && (
-                                <option value="UNDER_REVIEW">Mark Under Review</option>
-                              )}
-                              <option value="APPROVE">Approve Resignation</option>
-                              <option value="REJECT">Reject Resignation</option>
-                            </select>
-                          </div>
+                      <p className="tab-desc">
+                        Accept or decline this resignation request. Accepting saves the confirmed Last Working Day and opens clearance and settlement workflows.
+                      </p>
 
-                          {reviewAction === 'APPROVE' && (
-                            <div className="form-col">
-                              <label htmlFor="approved_relieving_date" className="lbl">Approved Relieving Date</label>
-                              <input
-                                id="approved_relieving_date"
-                                type="date"
-                                className="filter-input"
-                                value={approvedDate}
-                                onChange={(e) => setApprovedDate(e.target.value)}
-                                required
-                              />
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="form-row">
-                          <div className="form-col span-2">
-                            <label htmlFor="review_remarks" className="lbl">
-                              Admin Remarks {reviewAction === 'REJECT' && <span className="text-danger">*</span>}
-                            </label>
-                            <textarea
-                              id="review_remarks"
-                              rows={2}
-                              className="filter-input"
-                              placeholder="Enter approval conditions or rejection reasons..."
-                              value={adminRemarks}
-                              onChange={(e) => setAdminRemarks(e.target.value)}
-                              required={reviewAction === 'REJECT'}
-                            />
-                          </div>
-                        </div>
-
+                      <div className="review-action-toggle-row">
                         <button
-                          type="submit"
-                          disabled={submittingReview}
-                          className="admin-btn admin-btn-primary"
+                          type="button"
+                          className={`action-btn-toggle ${reviewAction === 'APPROVE' ? 'toggle-accept-active' : ''}`}
+                          onClick={() => setReviewAction('APPROVE')}
                         >
-                          {submittingReview ? 'Updating...' : 'Save Review Action'}
+                          ✓ Accept Resignation
                         </button>
+                        <button
+                          type="button"
+                          className={`action-btn-toggle ${reviewAction === 'REJECT' ? 'toggle-decline-active' : ''}`}
+                          onClick={() => setReviewAction('REJECT')}
+                        >
+                          ✕ Decline Resignation
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleReviewSubmit} className="review-form">
+                        {reviewAction === 'APPROVE' ? (
+                          <>
+                            <div className="form-row">
+                              <div className="form-col">
+                                <label htmlFor="approved_relieving_date" className="lbl">
+                                  Approved Last Working Day <span className="text-danger">*</span>
+                                </label>
+                                <input
+                                  id="approved_relieving_date"
+                                  type="date"
+                                  className="filter-input"
+                                  value={approvedDate}
+                                  onChange={(e) => setApprovedDate(e.target.value)}
+                                  required
+                                />
+                                <span className="help-text">Company-approved last working day for this employee.</span>
+                              </div>
+                              <div className="form-col">
+                                <label htmlFor="review_remarks_accept" className="lbl">Admin Remarks (Optional)</label>
+                                <input
+                                  id="review_remarks_accept"
+                                  type="text"
+                                  className="filter-input"
+                                  placeholder="Approval notes or conditions..."
+                                  value={adminRemarks}
+                                  onChange={(e) => setAdminRemarks(e.target.value)}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="form-actions-right">
+                              <button
+                                type="submit"
+                                disabled={submittingReview}
+                                className="admin-btn admin-btn-success"
+                              >
+                                {submittingReview ? 'Accepting...' : 'Confirm & Accept Resignation'}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="form-row">
+                              <div className="form-col span-2">
+                                <label htmlFor="review_remarks_decline" className="lbl">
+                                  Reason for Declining <span className="text-danger">*</span>
+                                </label>
+                                <textarea
+                                  id="review_remarks_decline"
+                                  rows={3}
+                                  className="filter-input"
+                                  placeholder="Provide a detailed reason explaining why this resignation is declined (required)..."
+                                  value={adminRemarks}
+                                  onChange={(e) => setAdminRemarks(e.target.value)}
+                                  required
+                                />
+                                <span className="help-text">This reason will be visible to the employee on their portal.</span>
+                              </div>
+                            </div>
+
+                            <div className="form-actions-right">
+                              <button
+                                type="submit"
+                                disabled={submittingReview}
+                                className="admin-btn admin-btn-danger"
+                              >
+                                {submittingReview ? 'Declining...' : 'Confirm & Decline Resignation'}
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </form>
+                    </div>
+                  )}
+
+                  {selectedReq.status === 'REJECTED' && (
+                    <div className="admin-alert admin-alert-danger" style={{ marginTop: '1rem' }}>
+                      <strong>Resignation Declined:</strong> This request was declined. Clearance, F&F settlement, and exit document processing are halted.
                     </div>
                   )}
 
@@ -624,32 +940,19 @@ export default function AdminExit() {
                     <div className="completion-banner">
                       <h4>Offboarding Completed</h4>
                       <p>This employee separation was finalized on {formatDate(selectedReq.completed_at)}. Account access is inactive.</p>
-                      <div className="doc-btn-group">
-                        <button
-                          type="button"
-                          disabled={downloadingDoc === 'Relieving Letter'}
-                          onClick={() => handleAdminDownload('Relieving Letter', api.admin.exit.downloadRelievingLetter)}
-                          className="admin-btn admin-btn-sm admin-btn-outline"
-                        >
-                          {downloadingDoc === 'Relieving Letter' ? 'Downloading...' : 'Download Relieving Letter'}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={downloadingDoc === 'Experience Certificate'}
-                          onClick={() => handleAdminDownload('Experience Certificate', api.admin.exit.downloadExperienceCertificate)}
-                          className="admin-btn admin-btn-sm admin-btn-outline"
-                        >
-                          {downloadingDoc === 'Experience Certificate' ? 'Downloading...' : 'Download Experience Certificate'}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={downloadingDoc === 'FnF Statement'}
-                          onClick={() => handleAdminDownload('FnF Statement', api.admin.exit.downloadFnfStatement)}
-                          className="admin-btn admin-btn-sm admin-btn-outline"
-                        >
-                          {downloadingDoc === 'FnF Statement' ? 'Downloading...' : 'Download F&F Statement'}
-                        </button>
-                      </div>
+                      <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem' }}>
+                        Official exit documents are managed and released to the employee under the <strong>Exit Documents</strong> tab.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalTab('documents');
+                          fetchDocuments(selectedReq.id);
+                        }}
+                        className="admin-btn admin-btn-sm admin-btn-primary"
+                      >
+                        Manage Exit Documents →
+                      </button>
                     </div>
                   )}
                 </div>
@@ -663,53 +966,59 @@ export default function AdminExit() {
                     Update clearance status for IT, Finance, HR, and Department Handover. All clearances must be CLEARED or WAIVED prior to F&F finalization.
                   </p>
 
-                  <div className="clearance-cards-list">
-                    {clearances.map((c) => (
-                      <div key={c.id} className="clearance-edit-row">
-                        <div className="clr-info">
-                          <h4 className="clr-dept">{c.department.replace('_', ' ')}</h4>
-                          <span className={`status-badge badge-${c.status.toLowerCase()}`}>{c.status}</span>
-                          {c.cleared_at && <span className="clr-date">Updated: {formatDate(c.cleared_at)}</span>}
-                        </div>
-
-                        {selectedReq.status !== 'COMPLETED' && (
-                          <div className="clr-actions">
-                            <select
-                              value={clearanceStatusInput[c.id] || c.status}
-                              onChange={(e) =>
-                                setClearanceStatusInput((prev) => ({ ...prev, [c.id]: e.target.value }))
-                              }
-                              className="filter-select clr-select"
-                            >
-                              <option value="PENDING">Pending</option>
-                              <option value="CLEARED">Cleared</option>
-                              <option value="WAIVED">Waived</option>
-                              <option value="REJECTED">Rejected</option>
-                            </select>
-
-                            <input
-                              type="text"
-                              placeholder="Optional remarks..."
-                              value={clearanceRemarksInput[c.id] !== undefined ? clearanceRemarksInput[c.id] : c.remarks || ''}
-                              onChange={(e) =>
-                                setClearanceRemarksInput((prev) => ({ ...prev, [c.id]: e.target.value }))
-                              }
-                              className="filter-input clr-remarks-input"
-                            />
-
-                            <button
-                              type="button"
-                              disabled={updatingClearanceId === c.id}
-                              onClick={() => handleClearanceUpdate(c.id)}
-                              className="admin-btn admin-btn-sm admin-btn-secondary"
-                            >
-                              {updatingClearanceId === c.id ? 'Saving...' : 'Update'}
-                            </button>
+                  {selectedReq.status === 'REJECTED' ? (
+                    <div className="admin-alert admin-alert-warning">
+                      This resignation was declined. Department clearances are not applicable.
+                    </div>
+                  ) : (
+                    <div className="clearance-cards-list">
+                      {clearances.map((c) => (
+                        <div key={c.id} className="clearance-edit-row">
+                          <div className="clr-info">
+                            <h4 className="clr-dept">{c.department.replace('_', ' ')}</h4>
+                            <span className={`status-badge badge-${c.status.toLowerCase()}`}>{c.status}</span>
+                            {c.cleared_at && <span className="clr-date">Updated: {formatDate(c.cleared_at)}</span>}
                           </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+
+                          {selectedReq.status !== 'COMPLETED' && selectedReq.status !== 'WITHDRAWN' && (
+                            <div className="clr-actions">
+                              <select
+                                value={clearanceStatusInput[c.id] || c.status}
+                                onChange={(e) =>
+                                  setClearanceStatusInput((prev) => ({ ...prev, [c.id]: e.target.value }))
+                                }
+                                className="filter-select clr-select"
+                              >
+                                <option value="PENDING">Pending</option>
+                                <option value="CLEARED">Cleared</option>
+                                <option value="WAIVED">Waived</option>
+                                <option value="REJECTED">Rejected</option>
+                              </select>
+
+                              <input
+                                type="text"
+                                placeholder="Optional remarks..."
+                                value={clearanceRemarksInput[c.id] !== undefined ? clearanceRemarksInput[c.id] : c.remarks || ''}
+                                onChange={(e) =>
+                                  setClearanceRemarksInput((prev) => ({ ...prev, [c.id]: e.target.value }))
+                                }
+                                className="filter-input clr-remarks-input"
+                              />
+
+                              <button
+                                type="button"
+                                disabled={updatingClearanceId === c.id}
+                                onClick={() => handleClearanceUpdate(c.id)}
+                                className="admin-btn admin-btn-sm admin-btn-secondary"
+                              >
+                                {updatingClearanceId === c.id ? 'Saving...' : 'Update'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -721,193 +1030,600 @@ export default function AdminExit() {
                     Review and calibrate final salary calculations. Values are dynamically computed on the backend server.
                   </p>
 
-                  <form onSubmit={handleRecalculateFnf} className="fnf-form">
-                    <div className="fnf-grid">
-                      <div className="fnf-col">
-                        <label htmlFor="fnf_divisor" className="lbl">Salary Divisor (Days)</label>
-                        <input
-                          id="fnf_divisor"
-                          type="number"
-                          step="1"
-                          min="1"
-                          max="31"
-                          className="filter-input"
-                          value={fnfInputs.salary_divisor}
-                          onChange={(e) => setFnfInputs((p) => ({ ...p, salary_divisor: e.target.value }))}
-                        />
-                        <span className="help-text">Default 30 days standard month.</span>
-                      </div>
-
-                      <div className="fnf-col">
-                        <label htmlFor="fnf_payable_days" className="lbl">Payable Days (Final Month)</label>
-                        <input
-                          id="fnf_payable_days"
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          className="filter-input"
-                          value={fnfInputs.payable_days}
-                          onChange={(e) => setFnfInputs((p) => ({ ...p, payable_days: e.target.value }))}
-                        />
-                        <span className="help-text">Worked days + Paid Leave + Holidays</span>
-                      </div>
-
-                      <div className="fnf-col">
-                        <label htmlFor="fnf_encashed_days" className="lbl">Encashed PL Days</label>
-                        <input
-                          id="fnf_encashed_days"
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          className="filter-input"
-                          value={fnfInputs.encashed_leave_days}
-                          onChange={(e) => setFnfInputs((p) => ({ ...p, encashed_leave_days: e.target.value }))}
-                        />
-                        <span className="help-text">
-                          Available PL: {fnfBreakdown?.leave_encashment?.available_pl_days ?? '...'}
-                        </span>
-                      </div>
-
-                      <div className="fnf-col">
-                        <label htmlFor="fnf_gratuity" className="lbl">Gratuity Payout (₹)</label>
-                        <input
-                          id="fnf_gratuity"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          className="filter-input"
-                          value={fnfInputs.gratuity_amount}
-                          onChange={(e) => setFnfInputs((p) => ({ ...p, gratuity_amount: e.target.value }))}
-                        />
-                        <span className="help-text">
-                          Tenure: {fnfBreakdown?.tenure?.formatted ?? '...'}
-                        </span>
-                      </div>
-
-                      <div className="fnf-col">
-                        <label htmlFor="fnf_bonus" className="lbl">Bonus / Incentives (₹)</label>
-                        <input
-                          id="fnf_bonus"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          className="filter-input"
-                          value={fnfInputs.bonus_or_incentive}
-                          onChange={(e) => setFnfInputs((p) => ({ ...p, bonus_or_incentive: e.target.value }))}
-                        />
-                      </div>
-
-                      <div className="fnf-col">
-                        <label htmlFor="fnf_notice_recovery" className="lbl">Notice Shortfall Recovery (₹)</label>
-                        <input
-                          id="fnf_notice_recovery"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          className="filter-input"
-                          value={fnfInputs.notice_recovery}
-                          onChange={(e) => setFnfInputs((p) => ({ ...p, notice_recovery: e.target.value }))}
-                        />
-                      </div>
-
-                      <div className="fnf-col">
-                        <label htmlFor="fnf_other_deductions" className="lbl">Other Deductions / Dues (₹)</label>
-                        <input
-                          id="fnf_other_deductions"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          className="filter-input"
-                          value={fnfInputs.other_deductions}
-                          onChange={(e) => setFnfInputs((p) => ({ ...p, other_deductions: e.target.value }))}
-                        />
-                      </div>
+                  {selectedReq.status === 'REJECTED' ? (
+                    <div className="admin-alert admin-alert-warning">
+                      This resignation was declined. Full & Final settlement is not applicable.
                     </div>
+                  ) : (
+                    <>
+                      <form onSubmit={handleRecalculateFnf} className="fnf-form">
+                        <div className="fnf-grid">
+                          <div className="fnf-col">
+                            <label htmlFor="fnf_divisor" className="lbl">Salary Divisor (Days)</label>
+                            <input
+                              id="fnf_divisor"
+                              type="number"
+                              step="1"
+                              min="1"
+                              max="31"
+                              className="filter-input"
+                              value={fnfInputs.salary_divisor}
+                              onChange={(e) => setFnfInputs((p) => ({ ...p, salary_divisor: e.target.value }))}
+                            />
+                            <span className="help-text">Default 30 days standard month.</span>
+                          </div>
 
-                    <div className="fnf-action-bar">
-                      <button
-                        type="submit"
-                        disabled={calculatingFnf}
-                        className="admin-btn admin-btn-secondary"
-                      >
-                        {calculatingFnf ? 'Recalculating...' : 'Recalculate Preview'}
-                      </button>
-                    </div>
-                  </form>
+                          <div className="fnf-col">
+                            <label htmlFor="fnf_payable_days" className="lbl">Payable Days (Final Month)</label>
+                            <input
+                              id="fnf_payable_days"
+                              type="number"
+                              step="0.5"
+                              min="0"
+                              className="filter-input"
+                              value={fnfInputs.payable_days}
+                              onChange={(e) => setFnfInputs((p) => ({ ...p, payable_days: e.target.value }))}
+                            />
+                            <span className="help-text">Worked days + Paid Leave + Holidays</span>
+                          </div>
 
-                  {/* Settlement Breakdown Card */}
-                  {fnfBreakdown && (
-                    <div className="breakdown-card">
-                      <div className="breakdown-columns">
-                        <div className="col-box">
-                          <h4 className="box-title">Earnings / Credits</h4>
-                          <div className="line-item">
-                            <span>Prorated Salary ({fnfBreakdown.payable_days} days):</span>
-                            <strong>{formatINR(fnfBreakdown.prorated_salary)}</strong>
+                          <div className="fnf-col">
+                            <label htmlFor="fnf_encashed_days" className="lbl">Encashed PL Days</label>
+                            <input
+                              id="fnf_encashed_days"
+                              type="number"
+                              step="0.5"
+                              min="0"
+                              className="filter-input"
+                              value={fnfInputs.encashed_leave_days}
+                              onChange={(e) => setFnfInputs((p) => ({ ...p, encashed_leave_days: e.target.value }))}
+                            />
+                            <span className="help-text">
+                              Available PL: {fnfBreakdown?.leave_encashment?.available_pl_days ?? '...'}
+                            </span>
                           </div>
-                          <div className="line-item">
-                            <span>Leave Encashment ({fnfBreakdown.leave_encashment?.encashed_leave_days} PL days):</span>
-                            <strong>{formatINR(fnfBreakdown.leave_encashment?.leave_encashment_amount)}</strong>
+
+                          <div className="fnf-col">
+                            <label htmlFor="fnf_gratuity" className="lbl">Gratuity Payout (₹)</label>
+                            <input
+                              id="fnf_gratuity"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="filter-input"
+                              value={fnfInputs.gratuity_amount}
+                              onChange={(e) => setFnfInputs((p) => ({ ...p, gratuity_amount: e.target.value }))}
+                            />
+                            <span className="help-text">
+                              Tenure: {fnfBreakdown?.tenure?.formatted ?? '...'}
+                            </span>
                           </div>
-                          <div className="line-item">
-                            <span>Gratuity:</span>
-                            <strong>{formatINR(fnfBreakdown.gratuity?.gratuity_amount)}</strong>
+
+                          <div className="fnf-col">
+                            <label htmlFor="fnf_bonus" className="lbl">Bonus / Incentives (₹)</label>
+                            <input
+                              id="fnf_bonus"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="filter-input"
+                              value={fnfInputs.bonus_or_incentive}
+                              onChange={(e) => setFnfInputs((p) => ({ ...p, bonus_or_incentive: e.target.value }))}
+                            />
                           </div>
-                          <div className="line-item">
-                            <span>Bonus / Incentive:</span>
-                            <strong>{formatINR(fnfBreakdown.bonus_or_incentive)}</strong>
+
+                          <div className="fnf-col">
+                            <label htmlFor="fnf_notice_recovery" className="lbl">Notice Shortfall Recovery (₹)</label>
+                            <input
+                              id="fnf_notice_recovery"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="filter-input"
+                              value={fnfInputs.notice_recovery}
+                              onChange={(e) => setFnfInputs((p) => ({ ...p, notice_recovery: e.target.value }))}
+                            />
                           </div>
-                          <div className="line-total">
-                            <span>Total Earnings (A):</span>
-                            <strong>{formatINR(fnfBreakdown.total_earnings)}</strong>
+
+                          <div className="fnf-col">
+                            <label htmlFor="fnf_other_deductions" className="lbl">Other Deductions / Dues (₹)</label>
+                            <input
+                              id="fnf_other_deductions"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="filter-input"
+                              value={fnfInputs.other_deductions}
+                              onChange={(e) => setFnfInputs((p) => ({ ...p, other_deductions: e.target.value }))}
+                            />
                           </div>
                         </div>
 
-                        <div className="col-box">
-                          <h4 className="box-title">Deductions / Debits</h4>
-                          <div className="line-item">
-                            <span>Notice Period Shortfall:</span>
-                            <strong>{formatINR(fnfBreakdown.notice_period_recovery)}</strong>
-                          </div>
-                          <div className="line-item">
-                            <span>Other Clearance Deductions:</span>
-                            <strong>{formatINR(fnfBreakdown.other_deductions)}</strong>
-                          </div>
-                          <div className="line-total">
-                            <span>Total Deductions (B):</span>
-                            <strong>{formatINR(fnfBreakdown.total_deductions)}</strong>
-                          </div>
+                        <div className="fnf-action-bar">
+                          <button
+                            type="submit"
+                            disabled={calculatingFnf}
+                            className="admin-btn admin-btn-secondary"
+                          >
+                            {calculatingFnf ? 'Recalculating...' : 'Recalculate Preview'}
+                          </button>
                         </div>
-                      </div>
+                      </form>
 
-                      <div className="net-payable-box">
-                        <span>Net Settlement Payable (A - B):</span>
-                        <span className="net-amount">{formatINR(fnfBreakdown.net_payable_amount)}</span>
-                      </div>
-
-                      {/* Finalize Button Section */}
-                      {selectedReq.status === 'APPROVED' && (
-                        <div className="finalize-section">
-                          {!allClearancesDone ? (
-                            <div className="admin-alert admin-alert-warning">
-                              Cannot finalize offboarding: All 4 departmental clearances must be marked CLEARED or WAIVED. Current: {clearedCount}/4.
+                      {/* Settlement Breakdown Card */}
+                      {fnfBreakdown && (
+                        <div className="breakdown-card">
+                          <div className="breakdown-columns">
+                            <div className="col-box">
+                              <h4 className="box-title">Earnings / Credits</h4>
+                              <div className="line-item">
+                                <span>Prorated Salary ({fnfBreakdown.payable_days} days):</span>
+                                <strong>{formatINR(fnfBreakdown.prorated_salary)}</strong>
+                              </div>
+                              <div className="line-item">
+                                <span>Leave Encashment ({fnfBreakdown.leave_encashment?.encashed_leave_days} PL days):</span>
+                                <strong>{formatINR(fnfBreakdown.leave_encashment?.leave_encashment_amount)}</strong>
+                              </div>
+                              <div className="line-item">
+                                <span>Gratuity:</span>
+                                <strong>{formatINR(fnfBreakdown.gratuity?.gratuity_amount)}</strong>
+                              </div>
+                              <div className="line-item">
+                                <span>Bonus / Incentive:</span>
+                                <strong>{formatINR(fnfBreakdown.bonus_or_incentive)}</strong>
+                              </div>
+                              <div className="line-total">
+                                <span>Total Earnings (A):</span>
+                                <strong>{formatINR(fnfBreakdown.total_earnings)}</strong>
+                              </div>
                             </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setShowFinalizeModal(true)}
-                              className="admin-btn admin-btn-danger admin-btn-lg"
-                            >
-                              Finalize Offboarding & Deactivate Account
-                            </button>
+
+                            <div className="col-box">
+                              <h4 className="box-title">Deductions / Debits</h4>
+                              <div className="line-item">
+                                <span>Notice Period Shortfall:</span>
+                                <strong>{formatINR(fnfBreakdown.notice_period_recovery)}</strong>
+                              </div>
+                              <div className="line-item">
+                                <span>Other Clearance Deductions:</span>
+                                <strong>{formatINR(fnfBreakdown.other_deductions)}</strong>
+                              </div>
+                              <div className="line-total">
+                                <span>Total Deductions (B):</span>
+                                <strong>{formatINR(fnfBreakdown.total_deductions)}</strong>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="net-payable-box">
+                            <span>Net Settlement Payable (A - B):</span>
+                            <span className="net-amount">{formatINR(fnfBreakdown.net_payable_amount)}</span>
+                          </div>
+
+                          {/* Finalize Button Section */}
+                          {selectedReq.status === 'APPROVED' && (
+                            <div className="finalize-section">
+                              {!allClearancesDone ? (
+                                <div className="admin-alert admin-alert-warning">
+                                  Cannot finalize offboarding: All 4 departmental clearances must be marked CLEARED or WAIVED. Current: {clearedCount}/4.
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowFinalizeModal(true)}
+                                  className="admin-btn admin-btn-danger admin-btn-lg"
+                                >
+                                  Finalize Offboarding & Deactivate Account
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 4: Exit Documents */}
+              {modalTab === 'documents' && (
+                <div className="tab-pane">
+                  <div className="tab-header-flex">
+                    <div>
+                      <h3 className="section-title">Official Exit Documents Management</h3>
+                      <p className="tab-desc">
+                        Manually upload externally prepared PDF exit documents and configure independent release dates. Documents remain locked until their specified release date.
+                      </p>
                     </div>
+                    {['APPROVED', 'COMPLETED'].includes(selectedReq.status) && (
+                      <button
+                        type="button"
+                        onClick={() => openUploadModal('Other Exit Document')}
+                        className="admin-btn admin-btn-sm admin-btn-secondary"
+                      >
+                        + Upload Custom Document
+                      </button>
+                    )}
+                  </div>
+
+                  {docsError && <div className="admin-alert admin-alert-danger">{docsError}</div>}
+                  {docsSuccess && <div className="admin-alert admin-alert-success">{docsSuccess}</div>}
+
+                  {selectedReq.status === 'REJECTED' || selectedReq.status === 'WITHDRAWN' ? (
+                    <div className="admin-alert admin-alert-warning">
+                      This exit request was {selectedReq.status === 'REJECTED' ? 'declined' : 'withdrawn'}. Exit documents cannot be scheduled or issued.
+                    </div>
+                  ) : selectedReq.status === 'SUBMITTED' || selectedReq.status === 'UNDER_REVIEW' ? (
+                    <div className="admin-alert admin-alert-warning">
+                      Please review and accept this resignation before uploading official exit documents.
+                    </div>
+                  ) : loadingDocs ? (
+                    <div className="admin-loading-state">
+                      <div className="admin-spinner" />
+                      <p>Loading exit documents...</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Document Slots Table */}
+                      <div className="exit-docs-table-card">
+                        <table className="exit-docs-table">
+                          <thead>
+                            <tr>
+                              <th>Document Type</th>
+                              <th>Status</th>
+                              <th>Release Date</th>
+                              <th>Uploaded On</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {documentsData.standard_slots?.map((slot) => {
+                              const doc = slot.document;
+                              const isUploaded = !!doc;
+                              const status = slot.status; // 'NOT_UPLOADED' | 'SCHEDULED' | 'AVAILABLE'
+
+                              return (
+                                <tr key={slot.document_type}>
+                                  <td>
+                                    <div className="doc-type-info">
+                                      <strong className="doc-main-name">{slot.document_type}</strong>
+                                      {doc && (
+                                        <span className="doc-filename">
+                                          {doc.document_name} &bull; {formatFileSize(doc.file_size)}
+                                        </span>
+                                      )}
+                                      {doc?.remarks && <span className="doc-remarks-note">Note: {doc.remarks}</span>}
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <span className={`doc-status-badge badge-${status.toLowerCase()}`}>
+                                      {status === 'NOT_UPLOADED' ? 'Not Uploaded' : status === 'SCHEDULED' ? 'Scheduled' : 'Available'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    {isUploaded ? (
+                                      <div className="doc-date-cell">
+                                        <span className="doc-release-date">{formatDate(doc.release_date)}</span>
+                                        <span className={`doc-release-hint ${doc.is_available ? 'released-hint' : 'locked-hint'}`}>
+                                          {doc.is_available ? 'Available to employee' : 'Locked for employee'}
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-muted">—</span>
+                                    )}
+                                  </td>
+                                  <td>
+                                    {isUploaded ? (
+                                      <span className="doc-upload-time">{formatDate(doc.created_at)}</span>
+                                    ) : (
+                                      <span className="text-muted">—</span>
+                                    )}
+                                  </td>
+                                  <td>
+                                    <div className="doc-action-btns">
+                                      {isUploaded ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            disabled={viewingDocId === doc.id}
+                                            onClick={() => handleViewExitDoc(doc)}
+                                            className="admin-btn admin-btn-xs admin-btn-secondary"
+                                            title="Preview PDF"
+                                          >
+                                            {viewingDocId === doc.id ? 'Opening...' : 'View'}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={downloadingDocId === doc.id}
+                                            onClick={() => handleDownloadExitDoc(doc)}
+                                            className="admin-btn admin-btn-xs admin-btn-secondary"
+                                            title="Download PDF"
+                                          >
+                                            {downloadingDocId === doc.id ? '...' : 'Download'}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => openReplaceModal(doc)}
+                                            className="admin-btn admin-btn-xs admin-btn-primary"
+                                            title="Replace with updated PDF"
+                                          >
+                                            Replace
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => openChangeDateModal(doc)}
+                                            className="admin-btn admin-btn-xs admin-btn-outline"
+                                            title="Change employee availability date"
+                                          >
+                                            Change Date
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => openUploadModal(slot.document_type)}
+                                          className="admin-btn admin-btn-xs admin-btn-primary"
+                                        >
+                                          Upload Document
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Replaced Version History (Collapsible) */}
+                      {documentsData.replaced_history && documentsData.replaced_history.length > 0 && (
+                        <div className="doc-history-section">
+                          <button
+                            type="button"
+                            className="history-toggle-btn"
+                            onClick={() => setShowHistory(!showHistory)}
+                          >
+                            {showHistory ? '▼' : '►'} Replaced Documents History ({documentsData.replaced_history.length})
+                          </button>
+                          {showHistory && (
+                            <div className="history-table-wrapper">
+                              <table className="exit-docs-table history-table">
+                                <thead>
+                                  <tr>
+                                    <th>Document Type</th>
+                                    <th>Previous File</th>
+                                    <th>Original Release Date</th>
+                                    <th>Replaced Date</th>
+                                    <th>Action</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {documentsData.replaced_history.map((h) => (
+                                    <tr key={h.id}>
+                                      <td><strong>{h.document_type}</strong></td>
+                                      <td>{h.document_name} &bull; {formatFileSize(h.file_size)}</td>
+                                      <td>{formatDate(h.release_date)}</td>
+                                      <td>{formatDate(h.created_at)}</td>
+                                      <td>
+                                        <button
+                                          type="button"
+                                          disabled={downloadingDocId === h.id}
+                                          onClick={() => handleDownloadExitDoc(h)}
+                                          className="admin-btn admin-btn-xs admin-btn-secondary"
+                                        >
+                                          Download
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload / Replace Document Modal */}
+      {showUploadModal && (
+        <div className="admin-modal-backdrop-alert">
+          <div className="admin-confirm-dialog modal-md">
+            <div className="modal-header-simple">
+              <h3 className="confirm-title" style={{ color: '#0f172a' }}>
+                {uploadMode === 'REPLACE' ? `Replace Document: ${uploadDocType}` : 'Upload Exit Document'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowUploadModal(false)}
+                className="drawer-close-btn"
+                disabled={submittingDoc}
+              >
+                &times;
+              </button>
+            </div>
+
+            <p className="tab-desc" style={{ marginBottom: '1rem' }}>
+              {uploadMode === 'REPLACE'
+                ? 'Uploading a new PDF will archive the previous version and immediately activate this new version for the employee according to the release date.'
+                : 'Upload an externally prepared PDF document and choose the date when it should become visible and downloadable to the employee.'}
+            </p>
+
+            {uploadModalError && (
+              <div className="admin-alert admin-alert-danger" style={{ marginBottom: '1rem' }}>
+                {uploadModalError}
+              </div>
+            )}
+
+            <form onSubmit={handleUploadDocumentSubmit}>
+              {uploadMode === 'CREATE' && (
+                <div className="form-group-spaced">
+                  <label className="lbl">Document Type <span className="text-danger">*</span></label>
+                  <select
+                    className="filter-select"
+                    value={uploadDocType}
+                    onChange={(e) => setUploadDocType(e.target.value)}
+                    disabled={submittingDoc}
+                  >
+                    <option value="Relieving Letter">Relieving Letter</option>
+                    <option value="Experience Certificate">Experience Certificate</option>
+                    <option value="FnF Statement">Full & Final Settlement Statement</option>
+                    <option value="Other Exit Document">Other Exit Document</option>
+                    <option value="Custom">Custom Document Type...</option>
+                  </select>
+                </div>
+              )}
+
+              {uploadDocType === 'Custom' && uploadMode === 'CREATE' && (
+                <div className="form-group-spaced">
+                  <label className="lbl">Custom Document Name <span className="text-danger">*</span></label>
+                  <input
+                    type="text"
+                    className="filter-input"
+                    placeholder="e.g. Non-Disclosure Undertaking"
+                    value={uploadCustomType}
+                    onChange={(e) => setUploadCustomType(e.target.value)}
+                    required
+                    disabled={submittingDoc}
+                  />
+                </div>
+              )}
+
+              <div className="form-group-spaced">
+                <label className="lbl">Select PDF File <span className="text-danger">*</span></label>
+                <input
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="filter-input"
+                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                  required
+                  disabled={submittingDoc}
+                />
+                <span className="help-text">Only PDF files up to 10MB are permitted.</span>
+              </div>
+
+              <div className="form-group-spaced">
+                <label className="lbl">Employee Release Date <span className="text-danger">*</span></label>
+                <input
+                  type="date"
+                  className="filter-input"
+                  min={toDateInputValue(selectedReq?.approved_relieving_date || selectedReq?.requested_relieving_date)}
+                  value={uploadReleaseDate}
+                  onChange={(e) => setUploadReleaseDate(e.target.value)}
+                  required
+                  disabled={submittingDoc}
+                />
+                <span className="help-text">
+                  Document is locked from employee view/download until this date. Must be on or after Last Working Day ({formatDate(selectedReq?.approved_relieving_date || selectedReq?.requested_relieving_date)}).
+                </span>
+              </div>
+
+              <div className="form-group-spaced">
+                <label className="lbl">Admin Remarks (Optional)</label>
+                <textarea
+                  rows={2}
+                  className="filter-input"
+                  placeholder="Add internal notes or version notes..."
+                  value={uploadRemarks}
+                  onChange={(e) => setUploadRemarks(e.target.value)}
+                  disabled={submittingDoc}
+                />
+              </div>
+
+              <div className="confirm-actions" style={{ marginTop: '1.5rem' }}>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary"
+                  onClick={() => setShowUploadModal(false)}
+                  disabled={submittingDoc}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-btn admin-btn-primary"
+                  disabled={submittingDoc}
+                >
+                  {submittingDoc
+                    ? (uploadMode === 'REPLACE' ? 'Replacing...' : 'Uploading...')
+                    : (uploadMode === 'REPLACE' ? 'Replace Document' : 'Upload & Schedule')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Change Release Date Modal */}
+      {showChangeDateModal && changeDateDoc && (
+        <div className="admin-modal-backdrop-alert">
+          <div className="admin-confirm-dialog modal-sm">
+            <div className="modal-header-simple">
+              <h3 className="confirm-title" style={{ color: '#0f172a' }}>
+                Change Release Date
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowChangeDateModal(false)}
+                className="drawer-close-btn"
+                disabled={updatingDate}
+              >
+                &times;
+              </button>
+            </div>
+
+            <p className="tab-desc" style={{ marginBottom: '1rem' }}>
+              Update release date for <strong>{changeDateDoc.document_type}</strong>. Current: {formatDate(changeDateDoc.release_date)}.
+            </p>
+
+            {changeDateError && (
+              <div className="admin-alert admin-alert-danger" style={{ marginBottom: '1rem' }}>
+                {changeDateError}
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateReleaseDateSubmit}>
+              <div className="form-group-spaced">
+                <label className="lbl">New Release Date <span className="text-danger">*</span></label>
+                <input
+                  type="date"
+                  className="filter-input"
+                  min={toDateInputValue(selectedReq?.approved_relieving_date || selectedReq?.requested_relieving_date)}
+                  value={newReleaseDate}
+                  onChange={(e) => setNewReleaseDate(e.target.value)}
+                  required
+                  disabled={updatingDate}
+                />
+                <span className="help-text">
+                  Must be on or after Last Working Day ({formatDate(selectedReq?.approved_relieving_date || selectedReq?.requested_relieving_date)}).
+                </span>
+              </div>
+
+              <div className="confirm-actions" style={{ marginTop: '1.5rem' }}>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary"
+                  onClick={() => setShowChangeDateModal(false)}
+                  disabled={updatingDate}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="admin-btn admin-btn-primary"
+                  disabled={updatingDate}
+                >
+                  {updatingDate ? 'Updating...' : 'Save New Release Date'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -922,9 +1638,9 @@ export default function AdminExit() {
             </p>
             <ul className="confirm-checklist">
               <li>Atomic commit of Full & Final (F&F) settlement amount: <strong>{formatINR(fnfBreakdown?.net_payable_amount)}</strong></li>
-              <li>Official PDF Relieving Letter, Experience Certificate, and F&F Statement will be generated into private storage.</li>
               <li>Employee and User statuses will permanently transition to <strong>INACTIVE</strong>.</li>
               <li>All active OTPs will be invalidated and future portal login blocked.</li>
+              <li>Official exit documents (Relieving Letter, Experience Certificate, F&F Statement) are uploaded manually with independent release dates in the <strong>Exit Documents</strong> tab.</li>
             </ul>
             <div className="confirm-actions">
               <button

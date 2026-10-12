@@ -409,10 +409,70 @@ const uploadSingleProfilePhoto = (req, res, next) => {
   });
 };
 
+/**
+ * Middleware for uploading a single exit document PDF.
+ * Strictly enforces PDF extension, application/pdf MIME type, <= 10MB, and %PDF- magic bytes.
+ */
+const uploadSingleExitDocumentPdf = (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({
+            success: false,
+            message: 'File size exceeds the 10 MB limit',
+          });
+        }
+        return res.status(400).json({
+          success: false,
+          message: err.message || 'File upload error',
+        });
+      }
+
+      if (err.statusCode) {
+        return res.status(err.statusCode).json({
+          success: false,
+          message: err.message,
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: err.message || 'File upload error',
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded. A PDF file is required under field name "file".',
+      });
+    }
+
+    const ext = path.extname(req.file.originalname || '').toLowerCase();
+    if (ext !== '.pdf' || req.file.mimetype !== 'application/pdf') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid file type. Only PDF files are allowed for exit documents.',
+      });
+    }
+
+    if (!validateMagicBytes(req.file.buffer, 'application/pdf')) {
+      return res.status(400).json({
+        success: false,
+        message: 'File content signature does not match PDF format. Only authentic PDF files are allowed.',
+      });
+    }
+
+    next();
+  });
+};
+
 module.exports = {
   uploadSingleDocument,
   uploadSingleExcel,
   uploadSinglePayslipPdf,
+  uploadSingleExitDocumentPdf,
   uploadSingleProfilePhoto,
   uploadOnboardingFiles,
   validateMagicBytes,

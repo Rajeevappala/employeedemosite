@@ -1,5 +1,7 @@
 const path = require('path');
+process.env.NODE_ENV = 'test';
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+process.env.NODE_ENV = 'test';
 const http = require('http');
 const pool = require('./config/database');
 const { generateToken } = require('./utils/tokenUtils');
@@ -147,7 +149,6 @@ async function runVerificationPass() {
       { name: 'payslips', path: '/api/employee/payslips' },
       { name: 'PF', path: '/api/employee/pf' },
       { name: 'dashboard', path: '/api/employee/dashboard' },
-      { name: 'announcements', path: '/api/employee/announcements' },
     ];
 
     // 1.1 Test ACTIVE employee access to all 7 endpoints

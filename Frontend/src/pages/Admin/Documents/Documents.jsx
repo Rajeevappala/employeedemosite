@@ -54,6 +54,20 @@ const formatDate = (dateStr) => {
   }
 };
 
+/**
+ * Canonical helper to determine employee department classification (IT vs Non-IT).
+ * Respects standard organization classification mapping for legacy master departments.
+ */
+const getEmployeeDepartmentCategory = (department) => {
+  if (!department) return 'Non-IT';
+  const trimmed = String(department).trim();
+  const lower = trimmed.toLowerCase();
+  if (lower === 'it') return 'IT';
+  if (lower === 'non-it') return 'Non-IT';
+  if (['engineering', 'technology'].includes(lower)) return 'IT';
+  return 'Non-IT';
+};
+
 function Documents() {
   const navigate = useNavigate();
 
@@ -98,8 +112,14 @@ function Documents() {
     description: '',
   });
 
+  // Modal Department filter and employee search state
+  const [modalDeptFilter, setModalDeptFilter] = useState('ALL');
+  const [empSearchQuery, setEmpSearchQuery] = useState('');
+  const [isEmpDropdownOpen, setIsEmpDropdownOpen] = useState(false);
+
   const dropdownRef = useRef(null);
   const fileInputRef = useRef(null);
+  const empSelectorRef = useRef(null);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -107,14 +127,15 @@ function Documents() {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setOpenDropdownId(null);
       }
+      if (empSelectorRef.current && !empSelectorRef.current.contains(event.target)) {
+        setIsEmpDropdownOpen(false);
+      }
     };
-    if (openDropdownId) {
-      document.addEventListener('mousedown', handleOutsideClick);
-    }
+    document.addEventListener('mousedown', handleOutsideClick);
     return () => {
       document.removeEventListener('mousedown', handleOutsideClick);
     };
-  }, [openDropdownId]);
+  }, []);
 
   // Clean up preview Blob URL on unmount or URL replacement
   useEffect(() => {
@@ -140,12 +161,6 @@ function Documents() {
         const res = await api.admin.getEmployees({ limit: 100 });
         if (isMounted && res && res.success && Array.isArray(res.data)) {
           setEmployeesList(res.data);
-          if (res.data.length > 0) {
-            setUploadForm((p) => ({
-              ...p,
-              employeeId: p.employeeId || res.data[0].employee_id,
-            }));
-          }
         }
       } catch (err) {
         console.error('Failed to load employee directory:', err);
@@ -156,6 +171,69 @@ function Documents() {
       isMounted = false;
     };
   }, []);
+
+  // Filtered employees for the upload modal searchable selector
+  const modalFilteredEmployees = useMemo(() => {
+    let list = employeesList.filter((emp) => !emp.status || emp.status.toUpperCase() === 'ACTIVE');
+
+    // 1. Filter by Department (IT / Non-IT / All Departments)
+    if (modalDeptFilter !== 'ALL') {
+      list = list.filter((emp) => getEmployeeDepartmentCategory(emp.department) === modalDeptFilter);
+    }
+
+    // 2. Filter by search query (employee name or employee ID)
+    if (empSearchQuery.trim()) {
+      const q = empSearchQuery.trim().toLowerCase();
+      list = list.filter((emp) => {
+        const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim().toLowerCase();
+        const empId = (emp.employee_id || '').toLowerCase();
+        return fullName.includes(q) || empId.includes(q);
+      });
+    }
+
+    return list;
+  }, [employeesList, modalDeptFilter, empSearchQuery]);
+
+  // Selected employee object for display badge
+  const selectedEmployeeObj = useMemo(() => {
+    if (!uploadForm.employeeId) return null;
+    return employeesList.find((e) => e.employee_id === uploadForm.employeeId) || null;
+  }, [employeesList, uploadForm.employeeId]);
+
+  // Department filter change handler
+  const handleDeptFilterChange = (newDept) => {
+    setModalDeptFilter(newDept);
+    // Clear selection only if that employee is no longer in filtered results
+    if (uploadForm.employeeId) {
+      const currentSelectedEmp = employeesList.find((e) => e.employee_id === uploadForm.employeeId);
+      if (currentSelectedEmp) {
+        const matchesNewDept =
+          newDept === 'ALL' || getEmployeeDepartmentCategory(currentSelectedEmp.department) === newDept;
+        if (!matchesNewDept) {
+          setUploadForm((prev) => ({ ...prev, employeeId: '' }));
+        }
+      } else {
+        setUploadForm((prev) => ({ ...prev, employeeId: '' }));
+      }
+    }
+  };
+
+  // Close upload / replace modal
+  const handleCloseUploadModal = () => {
+    setIsUploadModalOpen(false);
+    setReplaceDocId(null);
+    setSelectedFile(null);
+    setModalDeptFilter('ALL');
+    setEmpSearchQuery('');
+    setIsEmpDropdownOpen(false);
+    setUploadForm({
+      employeeId: '',
+      documentType: 'Offer Letter',
+      documentName: '',
+      monthYear: '',
+      description: '',
+    });
+  };
 
   // Fetch documents from backend API
   const fetchDocuments = useCallback(async () => {
@@ -266,6 +344,10 @@ function Documents() {
   const handleOpenUploadModal = (replaceId = null) => {
     setReplaceDocId(replaceId);
     setSelectedFile(null);
+    setModalDeptFilter('ALL');
+    setEmpSearchQuery('');
+    setIsEmpDropdownOpen(false);
+
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -283,7 +365,7 @@ function Documents() {
       }
     } else {
       setUploadForm({
-        employeeId: employeesList.length > 0 ? employeesList[0].employee_id : '',
+        employeeId: '',
         documentType: 'Offer Letter',
         documentName: '',
         monthYear: '',
@@ -336,9 +418,7 @@ function Documents() {
         showToast('Document uploaded successfully.');
       }
 
-      setIsUploadModalOpen(false);
-      setReplaceDocId(null);
-      setSelectedFile(null);
+      handleCloseUploadModal();
       fetchDocuments();
     } catch (err) {
       console.error('Upload failed:', err);
@@ -1065,11 +1145,7 @@ function Documents() {
               <button
                 type="button"
                 className="admin-modal-close-btn"
-                onClick={() => {
-                  setIsUploadModalOpen(false);
-                  setReplaceDocId(null);
-                  setSelectedFile(null);
-                }}
+                onClick={handleCloseUploadModal}
                 aria-label="Close upload modal"
               >
                 &times;
@@ -1077,26 +1153,163 @@ function Documents() {
             </div>
 
             <form onSubmit={handleUploadSubmit} className="admin-modal-form">
-              <div className="admin-form-field">
-                <label htmlFor="uploadEmpSelect" className="admin-field-label">
+              {/* Department Filter Selector */}
+              <div className="admin-form-field admin-dept-selector-wrap">
+                <label className="admin-field-label" id="modal-dept-label">
+                  Department
+                </label>
+                <div
+                  className="admin-dept-radio-group"
+                  role="radiogroup"
+                  aria-labelledby="modal-dept-label"
+                >
+                  <label className={`admin-dept-radio-label ${modalDeptFilter === 'IT' ? 'active' : ''}`}>
+                    <input
+                      type="radio"
+                      name="modalDeptFilter"
+                      value="IT"
+                      checked={modalDeptFilter === 'IT'}
+                      onChange={() => handleDeptFilterChange('IT')}
+                      className="admin-dept-radio-input"
+                    />
+                    <span>IT</span>
+                  </label>
+
+                  <label className={`admin-dept-radio-label ${modalDeptFilter === 'Non-IT' ? 'active' : ''}`}>
+                    <input
+                      type="radio"
+                      name="modalDeptFilter"
+                      value="Non-IT"
+                      checked={modalDeptFilter === 'Non-IT'}
+                      onChange={() => handleDeptFilterChange('Non-IT')}
+                      className="admin-dept-radio-input"
+                    />
+                    <span>Non-IT</span>
+                  </label>
+
+                  <label className={`admin-dept-radio-label ${modalDeptFilter === 'ALL' ? 'active' : ''}`}>
+                    <input
+                      type="radio"
+                      name="modalDeptFilter"
+                      value="ALL"
+                      checked={modalDeptFilter === 'ALL'}
+                      onChange={() => handleDeptFilterChange('ALL')}
+                      className="admin-dept-radio-input"
+                    />
+                    <span>All Departments</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Searchable Employee Selector */}
+              <div className="admin-form-field admin-emp-selector-field" ref={empSelectorRef} style={{ marginTop: '1rem', position: 'relative' }}>
+                <label htmlFor="uploadEmpSearchInput" className="admin-field-label">
                   Employee <span className="text-required">*</span>
                 </label>
-                <select
-                  id="uploadEmpSelect"
-                  className="admin-field-select"
-                  value={uploadForm.employeeId}
-                  onChange={(e) =>
-                    setUploadForm((p) => ({ ...p, employeeId: e.target.value }))
-                  }
-                  required
-                >
-                  <option value="">Select Employee</option>
-                  {employeesList.map((emp) => (
-                    <option key={emp.employee_id} value={emp.employee_id}>
-                      {emp.first_name} {emp.last_name} ({emp.employee_id})
-                    </option>
-                  ))}
-                </select>
+
+                <div className="admin-combobox-wrapper">
+                  <div className="admin-combobox-input-wrap">
+                    <svg
+                      className="admin-combobox-search-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <circle cx="11" cy="11" r="8" />
+                      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <input
+                      id="uploadEmpSearchInput"
+                      type="text"
+                      className="admin-field-input admin-combobox-input"
+                      placeholder="Search employee by name or ID..."
+                      value={empSearchQuery}
+                      onChange={(e) => {
+                        setEmpSearchQuery(e.target.value);
+                        setIsEmpDropdownOpen(true);
+                      }}
+                      onFocus={() => setIsEmpDropdownOpen(true)}
+                      aria-autocomplete="list"
+                      aria-expanded={isEmpDropdownOpen}
+                      aria-controls="uploadEmpOptionsList"
+                    />
+                    {uploadForm.employeeId && (
+                      <button
+                        type="button"
+                        className="admin-combobox-clear-btn"
+                        onClick={() => {
+                          setUploadForm((p) => ({ ...p, employeeId: '' }));
+                          setEmpSearchQuery('');
+                        }}
+                        title="Clear selected employee"
+                        aria-label="Clear selected employee"
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Selected Employee Indicator */}
+                  {selectedEmployeeObj ? (
+                    <div className="admin-selected-emp-badge">
+                      <span className="admin-selected-emp-check" aria-hidden="true">✓</span>
+                      <span className="admin-selected-emp-text">
+                        Selected: <strong>{selectedEmployeeObj.first_name} {selectedEmployeeObj.last_name}</strong> &bull; <span className="font-mono">{selectedEmployeeObj.employee_id}</span> &bull; <span className="admin-selected-emp-dept">{getEmployeeDepartmentCategory(selectedEmployeeObj.department)}</span>
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="admin-selected-emp-hint">
+                      {modalFilteredEmployees.length} employee{modalFilteredEmployees.length === 1 ? '' : 's'} available. Please select an employee.
+                    </div>
+                  )}
+
+                  {/* Dropdown Options List */}
+                  {isEmpDropdownOpen && (
+                    <ul id="uploadEmpOptionsList" className="admin-combobox-dropdown" role="listbox">
+                      {modalFilteredEmployees.length > 0 ? (
+                        modalFilteredEmployees.map((emp) => {
+                          const isSelected = uploadForm.employeeId === emp.employee_id;
+                          const deptCat = getEmployeeDepartmentCategory(emp.department);
+                          return (
+                            <li
+                              key={emp.employee_id}
+                              role="option"
+                              aria-selected={isSelected}
+                              className={`admin-combobox-option ${isSelected ? 'selected' : ''}`}
+                              onClick={() => {
+                                setUploadForm((p) => ({ ...p, employeeId: emp.employee_id }));
+                                setIsEmpDropdownOpen(false);
+                              }}
+                            >
+                              <div className="admin-combobox-option-content">
+                                <span className="admin-combobox-option-name">
+                                  {emp.first_name} {emp.last_name}
+                                </span>
+                                <span className="admin-combobox-option-sep">—</span>
+                                <span className="admin-combobox-option-id font-mono">
+                                  {emp.employee_id}
+                                </span>
+                                <span className="admin-combobox-option-sep">—</span>
+                                <span className={`admin-combobox-option-dept dept-${deptCat.toLowerCase()}`}>
+                                  {deptCat}
+                                </span>
+                              </div>
+                              {isSelected && <span className="admin-combobox-check" aria-hidden="true">✓</span>}
+                            </li>
+                          );
+                        })
+                      ) : (
+                        <li className="admin-combobox-empty-option" role="presentation">
+                          No employees match the selected department and search.
+                        </li>
+                      )}
+                    </ul>
+                  )}
+                </div>
               </div>
 
               <div className="admin-form-field" style={{ marginTop: '1rem' }}>
@@ -1190,11 +1403,7 @@ function Documents() {
                   type="button"
                   className="admin-btn admin-btn-secondary"
                   disabled={uploading}
-                  onClick={() => {
-                    setIsUploadModalOpen(false);
-                    setReplaceDocId(null);
-                    setSelectedFile(null);
-                  }}
+                  onClick={handleCloseUploadModal}
                 >
                   Cancel
                 </button>

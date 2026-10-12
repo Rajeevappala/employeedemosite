@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../../../services/api';
 import './Profile.css';
 
@@ -29,25 +29,15 @@ export default function Profile() {
   const [toastMessage, setToastMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Edit Mode State
-  const [isEditing, setIsEditing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [formData, setFormData] = useState({
-    personalEmail: '',
-    phone: '',
-    address: '',
-    city: '',
-    state: '',
-    pincode: '',
-    emergencyContactName: '',
-    emergencyContactPhone: '',
-    emergencyContactRelationship: '',
-  });
-
   // Profile Photo State
   const [photoBlobUrl, setPhotoBlobUrl] = useState(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Photo Preview Modal State
+  const [previewFile, setPreviewFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -56,15 +46,29 @@ export default function Profile() {
     }, 4000);
   };
 
+  const loadProfilePhoto = useCallback(async () => {
+    try {
+      const blob = await api.employee.getProfilePhotoBlob();
+      if (blob && blob.size > 0) {
+        const objectUrl = URL.createObjectURL(blob);
+        setPhotoBlobUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return objectUrl;
+        });
+      }
+    } catch {
+      setPhotoBlobUrl(null);
+    }
+  }, []);
+
   // Load employee profile & photo
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       const res = await api.employee.getProfile();
       if (res && res.success && res.data) {
         setEmployee(res.data);
-        syncFormData(res.data);
         if (res.data.has_profile_photo) {
           loadProfilePhoto();
         } else {
@@ -78,201 +82,86 @@ export default function Profile() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const loadProfilePhoto = async () => {
-    try {
-      const blob = await api.employee.getProfilePhotoBlob();
-      if (blob && blob.size > 0) {
-        const objectUrl = URL.createObjectURL(blob);
-        setPhotoBlobUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return objectUrl;
-        });
-      }
-    } catch {
-      // Photo fetch error (non-critical, fallback to initials avatar)
-      setPhotoBlobUrl(null);
-    }
-  };
-
-  const syncFormData = (data) => {
-    setFormData({
-      personalEmail: data.personal_email || '',
-      phone: data.phone || '',
-      address: data.address || '',
-      city: data.city || '',
-      state: data.state || '',
-      pincode: data.postal_code || data.pincode || '',
-      emergencyContactName: data.emergency_contact_name || '',
-      emergencyContactPhone: data.emergency_contact_phone || data.emergency_contact_number || '',
-      emergencyContactRelationship: data.emergency_contact_relationship || '',
-    });
-  };
-
-  const photoBlobUrlRef = useRef(null);
-  useEffect(() => {
-    photoBlobUrlRef.current = photoBlobUrl;
-  }, [photoBlobUrl]);
+  }, [loadProfilePhoto]);
 
   useEffect(() => {
-    let ignore = false;
-    const load = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const res = await api.employee.getProfile();
-        if (!ignore) {
-          if (res && res.success && res.data) {
-            setEmployee(res.data);
-            syncFormData(res.data);
-            if (res.data.has_profile_photo) {
-              loadProfilePhoto();
-            }
-          } else {
-            setError(res?.message || 'Unable to load profile.');
-          }
-        }
-      } catch (err) {
-        if (!ignore) {
-          setError(err.message || 'Unable to load profile.');
-        }
-      } finally {
-        if (!ignore) {
-          setLoading(false);
-        }
-      }
-    };
+    // oxlint-disable-next-line react/set-state-in-effect
+    fetchProfile();
+  }, [fetchProfile]);
 
-    load();
+  // Clean up object URLs on unmount
+  useEffect(() => {
     return () => {
-      ignore = true;
-      if (photoBlobUrlRef.current) {
-        URL.revokeObjectURL(photoBlobUrlRef.current);
-      }
+      if (photoBlobUrl) URL.revokeObjectURL(photoBlobUrl);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
-  }, []);
+  }, [photoBlobUrl, previewUrl]);
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  const handleStartEdit = () => {
-    if (employee) {
-      syncFormData(employee);
-    }
+  // Trigger hidden file picker
+  const handleOpenPicker = () => {
     setErrorMessage('');
-    setIsEditing(true);
-  };
-
-  const handleCancelEdit = () => {
-    if (employee) {
-      syncFormData(employee);
-    }
-    setErrorMessage('');
-    setIsEditing(false);
-  };
-
-  const handleSaveChanges = async (e) => {
-    e.preventDefault();
-    setErrorMessage('');
-
-    // Client-side validations
-    if (formData.personalEmail && formData.personalEmail.trim()) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(formData.personalEmail.trim())) {
-        setErrorMessage('Please enter a valid personal email address.');
-        return;
-      }
-    }
-
-    if (formData.phone && formData.phone.trim()) {
-      const cleanPhone = formData.phone.trim().replace(/[\s-]/g, '');
-      if (!/^\d{10}$/.test(cleanPhone)) {
-        setErrorMessage('Phone number must be a valid 10-digit number.');
-        return;
-      }
-    }
-
-    if (formData.pincode && formData.pincode.trim()) {
-      const cleanPincode = formData.pincode.trim().replace(/\s/g, '');
-      if (!/^\d{6}$/.test(cleanPincode)) {
-        setErrorMessage('Pincode must be exactly 6 numeric digits.');
-        return;
-      }
-    }
-
-    if (formData.emergencyContactPhone && formData.emergencyContactPhone.trim()) {
-      const cleanEmerPhone = formData.emergencyContactPhone.trim().replace(/[\s-]/g, '');
-      if (!/^\d{10}$/.test(cleanEmerPhone)) {
-        setErrorMessage('Emergency contact phone must be a valid 10-digit number.');
-        return;
-      }
-    }
-
-    try {
-      setIsSaving(true);
-      const payload = {
-        personal_email: formData.personalEmail.trim() || null,
-        phone: formData.phone.trim() || null,
-        address: formData.address.trim() || null,
-        city: formData.city.trim() || null,
-        state: formData.state.trim() || null,
-        postal_code: formData.pincode.trim() || null,
-        emergency_contact_name: formData.emergencyContactName.trim() || null,
-        emergency_contact_phone: formData.emergencyContactPhone.trim() || null,
-        emergency_contact_relationship: formData.emergencyContactRelationship.trim() || null,
-      };
-
-      const res = await api.employee.updateProfile(payload);
-      if (res && res.success && res.data) {
-        setEmployee(res.data);
-        syncFormData(res.data);
-        setIsEditing(false);
-        showToast('Profile updated successfully.');
-      } else {
-        setErrorMessage(res?.message || 'Failed to update profile.');
-      }
-    } catch (err) {
-      setErrorMessage(err.message || 'An error occurred while updating profile.');
-    } finally {
-      setIsSaving(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
     }
   };
 
-  // Profile Photo Upload Handler
-  const handlePhotoSelect = async (e) => {
+  // Handle file selection and open preview modal
+  const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
-      setErrorMessage('Invalid image type. Please select a JPEG, PNG, or WebP image.');
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setErrorMessage('Invalid image format. Only JPEG, PNG, and WebP images are allowed.');
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      setErrorMessage('Image size exceeds the 5 MB limit.');
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setErrorMessage('Image size exceeds the 5 MB limit. Please select a smaller photo.');
       return;
     }
+
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewFile(file);
+    setPreviewUrl(objectUrl);
+    setIsPreviewOpen(true);
+  };
+
+  // Close preview modal
+  const handleClosePreview = () => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+    setPreviewFile(null);
+    setIsPreviewOpen(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Confirm photo upload
+  const handleConfirmUpload = async () => {
+    if (!previewFile) return;
 
     try {
       setIsUploadingPhoto(true);
       setErrorMessage('');
-      const photoFormData = new FormData();
-      photoFormData.append('photo', file);
 
-      const res = await api.employee.uploadProfilePhoto(photoFormData);
+      const formData = new FormData();
+      formData.append('photo', previewFile);
+
+      const res = await api.employee.uploadProfilePhoto(formData);
       if (res && res.success) {
         showToast('Profile photo updated successfully.');
         await loadProfilePhoto();
         setEmployee((prev) => (prev ? { ...prev, has_profile_photo: true } : prev));
+        handleClosePreview();
       } else {
         setErrorMessage(res?.message || 'Failed to upload profile photo.');
       }
@@ -280,7 +169,6 @@ export default function Profile() {
       setErrorMessage(err.message || 'Error uploading profile photo.');
     } finally {
       setIsUploadingPhoto(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -311,33 +199,9 @@ export default function Profile() {
         <div className="profile-header-titles">
           <h1 className="profile-page-title">My Profile</h1>
           <p className="profile-page-subtitle">
-            View your personal details, contact information, and official employment records.
+            Official employee identification, contact details, and organization records.
           </p>
         </div>
-
-        {!isEditing && !loading && employee && (
-          <button
-            type="button"
-            className="profile-edit-btn"
-            onClick={handleStartEdit}
-            aria-label="Edit Profile"
-          >
-            <svg
-              className="profile-edit-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-            </svg>
-            <span>Edit Profile</span>
-          </button>
-        )}
       </header>
 
       {/* Global Error Banner */}
@@ -383,9 +247,10 @@ export default function Profile() {
           </button>
         </section>
       ) : employee ? (
-        <form onSubmit={handleSaveChanges} noValidate className="profile-form-container">
+        <div className="profile-cards-stack">
           {/* Header Summary Card with Profile Photo */}
           <section className="profile-summary-card" aria-label="Profile Summary">
+            {/* LEFT: Profile Photo & Camera Trigger */}
             <div className="profile-photo-wrapper">
               {photoBlobUrl ? (
                 <img
@@ -399,33 +264,32 @@ export default function Profile() {
                 </div>
               )}
 
-              {/* Photo Upload Trigger */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                id="profilePhotoUpload"
-                className="sr-only"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={handlePhotoSelect}
-                disabled={isUploadingPhoto}
-              />
-              <label
-                htmlFor="profilePhotoUpload"
-                className={`profile-photo-change-btn ${isUploadingPhoto ? 'uploading' : ''}`}
+              {/* Overlapping Camera Button */}
+              <button
+                type="button"
+                className="profile-photo-camera-btn"
+                onClick={handleOpenPicker}
                 title="Change Profile Photo"
                 aria-label="Change Profile Photo"
               >
-                {isUploadingPhoto ? (
-                  <span className="photo-spinner" aria-hidden="true" />
-                ) : (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                    <circle cx="12" cy="13" r="4" />
-                  </svg>
-                )}
-              </label>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+              </button>
+
+              {/* Visually Hidden File Input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
+                aria-hidden="true"
+              />
             </div>
 
+            {/* CENTER: Identity & Change Photo Button */}
             <div className="profile-summary-details">
               <div className="profile-summary-main">
                 <h2 className="profile-employee-name">{fullName}</h2>
@@ -440,19 +304,33 @@ export default function Profile() {
                 </div>
               </div>
 
-              <div className="profile-status-wrap">
-                <span className={`profile-status-pill status-${employee.status?.toLowerCase() || 'active'}`}>
-                  <span className="status-dot" aria-hidden="true" />
-                  {statusFormatted}
-                </span>
-                <span className="profile-location-text">
-                  📍 {formatEmploymentValue(employee.work_location, 'Headquarters')}
-                </span>
-              </div>
+              <button
+                type="button"
+                className="profile-change-photo-btn"
+                onClick={handleOpenPicker}
+                aria-label="Change Profile Photo"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+                <span>Change Photo</span>
+              </button>
+            </div>
+
+            {/* RIGHT: Status & Location */}
+            <div className="profile-status-wrap">
+              <span className={`profile-status-pill status-${employee.status?.toLowerCase() || 'active'}`}>
+                <span className="status-dot" aria-hidden="true" />
+                {statusFormatted}
+              </span>
+              <span className="profile-location-text">
+                📍 {formatEmploymentValue(employee.work_location, 'Headquarters')}
+              </span>
             </div>
           </section>
 
-          {/* Section 1: Personal Information */}
+          {/* Section 1: Personal Information (Strictly Read-Only) */}
           <section className="profile-card" aria-labelledby="personal-info-title">
             <div className="profile-card-header">
               <div className="card-header-icon" aria-hidden="true">
@@ -470,105 +348,80 @@ export default function Profile() {
             </div>
 
             <div className="profile-fields-grid">
-              {/* First Name (Read-Only) */}
+              {/* First Name */}
               <div className="profile-field-group">
                 <label className="profile-field-label">
-                  First Name <span className="readonly-badge">Read-only</span>
+                  <span>First Name</span>
                 </label>
                 <div className="profile-field-readonly">
                   {formatValue(employee.first_name)}
                 </div>
               </div>
 
-              {/* Last Name (Read-Only) */}
+              {/* Last Name */}
               <div className="profile-field-group">
                 <label className="profile-field-label">
-                  Last Name <span className="readonly-badge">Read-only</span>
+                  <span>Last Name</span>
                 </label>
                 <div className="profile-field-readonly">
                   {formatValue(employee.last_name)}
                 </div>
               </div>
 
-              {/* Employee ID (Read-Only) */}
+              {/* Employee ID */}
               <div className="profile-field-group">
                 <label className="profile-field-label">
-                  Employee ID <span className="readonly-badge">Read-only</span>
+                  <span>Employee ID</span>
                 </label>
-                <div className="profile-field-readonly font-mono font-semibold">
+                <div className="profile-field-readonly font-mono">
                   {employee.employee_id}
                 </div>
               </div>
 
-              {/* Official Email (Read-Only) */}
+              {/* Official Email */}
               <div className="profile-field-group">
                 <label className="profile-field-label">
-                  Official Email <span className="readonly-badge">Read-only</span>
+                  <span>Official Email</span>
                 </label>
                 <div className="profile-field-readonly">
                   {formatValue(employee.email)}
                 </div>
               </div>
 
-              {/* Personal Email (Editable) */}
-              <div className="profile-field-group">
-                <label htmlFor="field-personal-email" className="profile-field-label">
-                  Personal Email {isEditing && <span className="editable-badge">Editable</span>}
-                </label>
-                {isEditing ? (
-                  <input
-                    id="field-personal-email"
-                    type="email"
-                    name="personalEmail"
-                    className="profile-field-input"
-                    value={formData.personalEmail}
-                    onChange={handleInputChange}
-                    placeholder="e.g. name@example.com"
-                  />
-                ) : (
-                  <div className="profile-field-readonly">
-                    {formatValue(employee.personal_email)}
-                  </div>
-                )}
-              </div>
-
-              {/* Phone Number (Editable) */}
-              <div className="profile-field-group">
-                <label htmlFor="field-phone" className="profile-field-label">
-                  Phone Number {isEditing && <span className="editable-badge">Editable</span>}
-                </label>
-                {isEditing ? (
-                  <input
-                    id="field-phone"
-                    type="tel"
-                    name="phone"
-                    className="profile-field-input font-mono"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    placeholder="10-digit mobile number"
-                    maxLength={10}
-                  />
-                ) : (
-                  <div className="profile-field-readonly font-mono">
-                    {formatValue(employee.phone)}
-                  </div>
-                )}
-              </div>
-
-              {/* Date of Birth (Read-Only) */}
+              {/* Personal Email */}
               <div className="profile-field-group">
                 <label className="profile-field-label">
-                  Date of Birth <span className="readonly-badge">Read-only</span>
+                  <span>Personal Email</span>
                 </label>
                 <div className="profile-field-readonly">
-                  {formatValue(employee.date_of_birth)}
+                  {formatValue(employee.personal_email)}
                 </div>
               </div>
 
-              {/* Gender (Read-Only) */}
+              {/* Phone Number */}
               <div className="profile-field-group">
                 <label className="profile-field-label">
-                  Gender <span className="readonly-badge">Read-only</span>
+                  <span>Phone Number</span>
+                </label>
+                <div className="profile-field-readonly font-mono">
+                  {formatValue(employee.phone)}
+                </div>
+              </div>
+
+              {/* Date of Birth */}
+              <div className="profile-field-group">
+                <label className="profile-field-label">
+                  <span>Date of Birth</span>
+                </label>
+                <div className="profile-field-readonly">
+                  {formatValue(employee.date_of_birth ? new Date(employee.date_of_birth).toLocaleDateString('en-GB') : null)}
+                </div>
+              </div>
+
+              {/* Gender */}
+              <div className="profile-field-group">
+                <label className="profile-field-label">
+                  <span>Gender</span>
                 </label>
                 <div className="profile-field-readonly">
                   {formatValue(employee.gender)}
@@ -577,7 +430,7 @@ export default function Profile() {
             </div>
           </section>
 
-          {/* Section 2: Contact Information */}
+          {/* Section 2: Contact Information (Strictly Read-Only) */}
           <section className="profile-card" aria-labelledby="contact-info-title">
             <div className="profile-card-header">
               <div className="card-header-icon" aria-hidden="true">
@@ -595,98 +448,49 @@ export default function Profile() {
             </div>
 
             <div className="profile-fields-grid">
-              {/* Address (Editable, Full Width) */}
+              {/* Address */}
               <div className="profile-field-group full-width">
-                <label htmlFor="field-address" className="profile-field-label">
-                  Residential Address {isEditing && <span className="editable-badge">Editable</span>}
+                <label className="profile-field-label">
+                  <span>Residential Address</span>
                 </label>
-                {isEditing ? (
-                  <textarea
-                    id="field-address"
-                    name="address"
-                    rows={2}
-                    className="profile-field-textarea"
-                    value={formData.address}
-                    onChange={handleInputChange}
-                    placeholder="Street address, apartment, or flat number"
-                  />
-                ) : (
-                  <div className="profile-field-readonly">
-                    {formatValue(employee.address)}
-                  </div>
-                )}
+                <div className="profile-field-readonly">
+                  {formatValue(employee.address)}
+                </div>
               </div>
 
-              {/* City (Editable) */}
+              {/* City */}
               <div className="profile-field-group">
-                <label htmlFor="field-city" className="profile-field-label">
-                  City {isEditing && <span className="editable-badge">Editable</span>}
+                <label className="profile-field-label">
+                  <span>City</span>
                 </label>
-                {isEditing ? (
-                  <input
-                    id="field-city"
-                    type="text"
-                    name="city"
-                    className="profile-field-input"
-                    value={formData.city}
-                    onChange={handleInputChange}
-                    placeholder="City"
-                  />
-                ) : (
-                  <div className="profile-field-readonly">
-                    {formatValue(employee.city)}
-                  </div>
-                )}
+                <div className="profile-field-readonly">
+                  {formatValue(employee.city)}
+                </div>
               </div>
 
-              {/* State (Editable) */}
+              {/* State */}
               <div className="profile-field-group">
-                <label htmlFor="field-state" className="profile-field-label">
-                  State {isEditing && <span className="editable-badge">Editable</span>}
+                <label className="profile-field-label">
+                  <span>State</span>
                 </label>
-                {isEditing ? (
-                  <input
-                    id="field-state"
-                    type="text"
-                    name="state"
-                    className="profile-field-input"
-                    value={formData.state}
-                    onChange={handleInputChange}
-                    placeholder="State / Province"
-                  />
-                ) : (
-                  <div className="profile-field-readonly">
-                    {formatValue(employee.state)}
-                  </div>
-                )}
+                <div className="profile-field-readonly">
+                  {formatValue(employee.state)}
+                </div>
               </div>
 
-              {/* Pincode (Editable) */}
+              {/* Pincode */}
               <div className="profile-field-group">
-                <label htmlFor="field-pincode" className="profile-field-label">
-                  Pincode {isEditing && <span className="editable-badge">Editable</span>}
+                <label className="profile-field-label">
+                  <span>Postal / PIN Code</span>
                 </label>
-                {isEditing ? (
-                  <input
-                    id="field-pincode"
-                    type="text"
-                    name="pincode"
-                    className="profile-field-input font-mono"
-                    value={formData.pincode}
-                    onChange={handleInputChange}
-                    placeholder="6-digit pincode"
-                    maxLength={6}
-                  />
-                ) : (
-                  <div className="profile-field-readonly font-mono">
-                    {formatValue(employee.postal_code || employee.pincode)}
-                  </div>
-                )}
+                <div className="profile-field-readonly font-mono">
+                  {formatValue(employee.postal_code || employee.pincode)}
+                </div>
               </div>
             </div>
           </section>
 
-          {/* Section 3: Emergency Contact */}
+          {/* Section 3: Emergency Contact (Strictly Read-Only) */}
           <section className="profile-card" aria-labelledby="emergency-info-title">
             <div className="profile-card-header">
               <div className="card-header-icon" aria-hidden="true">
@@ -703,76 +507,39 @@ export default function Profile() {
             </div>
 
             <div className="profile-fields-grid">
-              {/* Emergency Contact Name (Editable) */}
+              {/* Contact Name */}
               <div className="profile-field-group">
-                <label htmlFor="field-emer-name" className="profile-field-label">
-                  Contact Name {isEditing && <span className="editable-badge">Editable</span>}
+                <label className="profile-field-label">
+                  <span>Contact Name</span>
                 </label>
-                {isEditing ? (
-                  <input
-                    id="field-emer-name"
-                    type="text"
-                    name="emergencyContactName"
-                    className="profile-field-input"
-                    value={formData.emergencyContactName}
-                    onChange={handleInputChange}
-                    placeholder="Full name of emergency contact"
-                  />
-                ) : (
-                  <div className="profile-field-readonly">
-                    {formatValue(employee.emergency_contact_name)}
-                  </div>
-                )}
+                <div className="profile-field-readonly">
+                  {formatValue(employee.emergency_contact_name)}
+                </div>
               </div>
 
-              {/* Emergency Contact Number (Editable) */}
+              {/* Contact Number */}
               <div className="profile-field-group">
-                <label htmlFor="field-emer-phone" className="profile-field-label">
-                  Contact Number {isEditing && <span className="editable-badge">Editable</span>}
+                <label className="profile-field-label">
+                  <span>Contact Number</span>
                 </label>
-                {isEditing ? (
-                  <input
-                    id="field-emer-phone"
-                    type="tel"
-                    name="emergencyContactPhone"
-                    className="profile-field-input font-mono"
-                    value={formData.emergencyContactPhone}
-                    onChange={handleInputChange}
-                    placeholder="10-digit mobile number"
-                    maxLength={10}
-                  />
-                ) : (
-                  <div className="profile-field-readonly font-mono">
-                    {formatValue(employee.emergency_contact_phone || employee.emergency_contact_number)}
-                  </div>
-                )}
+                <div className="profile-field-readonly font-mono">
+                  {formatValue(employee.emergency_contact_phone || employee.emergency_contact_number)}
+                </div>
               </div>
 
-              {/* Emergency Contact Relationship (Editable) */}
+              {/* Relationship */}
               <div className="profile-field-group">
-                <label htmlFor="field-emer-rel" className="profile-field-label">
-                  Relationship {isEditing && <span className="editable-badge">Editable</span>}
+                <label className="profile-field-label">
+                  <span>Relationship</span>
                 </label>
-                {isEditing ? (
-                  <input
-                    id="field-emer-rel"
-                    type="text"
-                    name="emergencyContactRelationship"
-                    className="profile-field-input"
-                    value={formData.emergencyContactRelationship}
-                    onChange={handleInputChange}
-                    placeholder="e.g. Spouse, Parent, Sibling"
-                  />
-                ) : (
-                  <div className="profile-field-readonly">
-                    {formatValue(employee.emergency_contact_relationship)}
-                  </div>
-                )}
+                <div className="profile-field-readonly">
+                  {formatValue(employee.emergency_contact_relationship)}
+                </div>
               </div>
             </div>
           </section>
 
-          {/* Section 4: Employment Information (All Strictly Read-Only) */}
+          {/* Section 4: Employment Information (Strictly Read-Only) */}
           <section className="profile-card" aria-labelledby="employment-info-title">
             <div className="profile-card-header">
               <div className="card-header-icon" aria-hidden="true">
@@ -792,50 +559,50 @@ export default function Profile() {
             </div>
 
             <div className="profile-fields-grid">
-              {/* Department (Read-Only) */}
+              {/* Department */}
               <div className="profile-field-group">
                 <label className="profile-field-label">
-                  Department <span className="readonly-badge">Read-only</span>
+                  <span>Department</span>
                 </label>
-                <div className="profile-field-readonly font-medium">
+                <div className="profile-field-readonly">
                   {formatEmploymentValue(employee.department)}
                 </div>
               </div>
 
-              {/* Designation (Read-Only) */}
+              {/* Designation */}
               <div className="profile-field-group">
                 <label className="profile-field-label">
-                  Designation <span className="readonly-badge">Read-only</span>
+                  <span>Designation</span>
                 </label>
-                <div className="profile-field-readonly font-medium">
+                <div className="profile-field-readonly">
                   {formatEmploymentValue(employee.designation)}
                 </div>
               </div>
 
-              {/* Date of Joining (Read-Only) */}
+              {/* Date of Joining */}
               <div className="profile-field-group">
                 <label className="profile-field-label">
-                  Date of Joining <span className="readonly-badge">Read-only</span>
+                  <span>Date of Joining</span>
                 </label>
                 <div className="profile-field-readonly">
-                  {formatEmploymentValue(employee.date_of_joining)}
+                  {formatEmploymentValue(employee.date_of_joining ? new Date(employee.date_of_joining).toLocaleDateString('en-GB') : null)}
                 </div>
               </div>
 
-              {/* Work Location (Read-Only) */}
+              {/* Work Location */}
               <div className="profile-field-group">
                 <label className="profile-field-label">
-                  Work Location <span className="readonly-badge">Read-only</span>
+                  <span>Work Location</span>
                 </label>
                 <div className="profile-field-readonly">
                   {formatEmploymentValue(employee.work_location)}
                 </div>
               </div>
 
-              {/* Employment Status (Read-Only) */}
+              {/* Employment Status */}
               <div className="profile-field-group">
                 <label className="profile-field-label">
-                  Employment Status <span className="readonly-badge">Read-only</span>
+                  <span>Employment Status</span>
                 </label>
                 <div className="profile-field-readonly">
                   <span className={`status-pill-inline status-${employee.status?.toLowerCase() || 'active'}`}>
@@ -844,10 +611,10 @@ export default function Profile() {
                 </div>
               </div>
 
-              {/* Working Days (Read-Only) */}
+              {/* Working Days */}
               <div className="profile-field-group">
                 <label className="profile-field-label">
-                  Working Schedule <span className="readonly-badge">Read-only</span>
+                  <span>Working Schedule</span>
                 </label>
                 <div className="profile-field-readonly">
                   {employee.working_days_per_week === 6
@@ -858,28 +625,188 @@ export default function Profile() {
             </div>
           </section>
 
-          {/* Bottom Edit Action Controls */}
-          {isEditing && (
-            <div className="profile-edit-actions-bar">
+          {/* Section 5: Bank Details */}
+          <section className="profile-card" aria-labelledby="bank-details-title">
+            <div className="profile-card-header">
+              <div className="card-header-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="2" y="5" width="20" height="14" rx="2" />
+                  <line x1="2" y1="10" x2="22" y2="10" />
+                </svg>
+              </div>
+              <div>
+                <h3 id="bank-details-title" className="profile-card-title">
+                  Bank Details
+                </h3>
+                <span className="profile-card-desc">
+                  Salary disbursement account and branch information
+                </span>
+              </div>
+            </div>
+
+            {employee.bank_details ? (
+              <div className="profile-fields-grid">
+                {/* Account Holder Name */}
+                <div className="profile-field-group">
+                  <label className="profile-field-label">
+                    <span>Account Holder Name</span>
+                  </label>
+                  <div className="profile-field-readonly">
+                    {formatValue(employee.bank_details.account_holder_name)}
+                  </div>
+                </div>
+
+                {/* Bank Name */}
+                <div className="profile-field-group">
+                  <label className="profile-field-label">
+                    <span>Bank Name</span>
+                  </label>
+                  <div className="profile-field-readonly">
+                    {formatValue(employee.bank_details.bank_name)}
+                  </div>
+                </div>
+
+                {/* Account Number (Masked) */}
+                <div className="profile-field-group">
+                  <label className="profile-field-label">
+                    <span>Account Number</span>
+                  </label>
+                  <div className="profile-field-readonly font-mono">
+                    {formatValue(employee.bank_details.account_number)}
+                  </div>
+                </div>
+
+                {/* IFSC Code */}
+                <div className="profile-field-group">
+                  <label className="profile-field-label">
+                    <span>IFSC Code</span>
+                  </label>
+                  <div className="profile-field-readonly font-mono">
+                    {formatValue(employee.bank_details.ifsc_code)}
+                  </div>
+                </div>
+
+                {/* Branch Name */}
+                <div className="profile-field-group">
+                  <label className="profile-field-label">
+                    <span>Branch Name</span>
+                  </label>
+                  <div className="profile-field-readonly">
+                    {formatValue(employee.bank_details.branch_name)}
+                  </div>
+                </div>
+
+                {/* Branch City */}
+                <div className="profile-field-group">
+                  <label className="profile-field-label">
+                    <span>Branch City</span>
+                  </label>
+                  <div className="profile-field-readonly">
+                    {formatValue(employee.bank_details.branch_city)}
+                  </div>
+                </div>
+
+                {/* Branch State */}
+                <div className="profile-field-group">
+                  <label className="profile-field-label">
+                    <span>Branch State</span>
+                  </label>
+                  <div className="profile-field-readonly">
+                    {formatValue(employee.bank_details.branch_state)}
+                  </div>
+                </div>
+
+                {/* Account Type */}
+                <div className="profile-field-group">
+                  <label className="profile-field-label">
+                    <span>Account Type</span>
+                  </label>
+                  <div className="profile-field-readonly">
+                    {formatValue(employee.bank_details.account_type, 'Savings')}
+                  </div>
+                </div>
+
+                {/* Verification Status */}
+                <div className="profile-field-group">
+                  <label className="profile-field-label">
+                    <span>Verification Status</span>
+                  </label>
+                  <div className="profile-field-readonly">
+                    <span className={`status-pill-inline status-${employee.bank_details.verification_status?.toLowerCase() || 'pending'}`}>
+                      {employee.bank_details.verification_status === 'Pending'
+                        ? 'Pending Verification'
+                        : (employee.bank_details.verification_status || 'Pending Verification')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="profile-empty-state-notice">
+                <p>Bank details have not been added yet.</p>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {/* Photo Preview & Confirmation Modal */}
+      {isPreviewOpen && previewUrl && (
+        <div className="photo-preview-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+          <div className="photo-preview-modal-card">
+            <div className="photo-preview-modal-header">
+              <h3 id="preview-title" className="photo-preview-modal-title">
+                Change Profile Photo
+              </h3>
+              <button
+                type="button"
+                className="photo-preview-modal-close"
+                onClick={handleClosePreview}
+                aria-label="Close photo preview"
+                disabled={isUploadingPhoto}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="photo-preview-crop-container">
+              <img
+                src={previewUrl}
+                alt="Selected profile photo preview"
+              />
+            </div>
+
+            <p className="photo-preview-modal-desc">
+              Preview your new profile picture above. The photo will be cropped to a circle and displayed across the portal.
+            </p>
+
+            <div className="photo-preview-modal-actions">
               <button
                 type="button"
                 className="profile-btn-secondary"
-                onClick={handleCancelEdit}
-                disabled={isSaving}
+                onClick={handleClosePreview}
+                disabled={isUploadingPhoto}
               >
                 Cancel
               </button>
               <button
-                type="submit"
+                type="button"
                 className="profile-btn-primary"
-                disabled={isSaving}
+                onClick={handleConfirmUpload}
+                disabled={isUploadingPhoto}
               >
-                {isSaving ? 'Saving Changes...' : 'Save Changes'}
+                {isUploadingPhoto ? (
+                  <>
+                    <span className="photo-uploading-spinner" aria-hidden="true" />
+                    Uploading...
+                  </>
+                ) : (
+                  'Upload Photo'
+                )}
               </button>
             </div>
-          )}
-        </form>
-      ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

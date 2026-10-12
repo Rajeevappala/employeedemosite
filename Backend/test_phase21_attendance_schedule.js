@@ -133,7 +133,7 @@ async function runAttendanceScheduleTests() {
       employee_id: 'GP8801N',
       firstName: 'Test',
       email: `test.sched.${Date.now()}@gaintpro.com`,
-      department: 'Technology',
+      department: 'IT',
       designation: 'Engineer',
     });
     assert(resMissing.statusCode === 400 && resMissing.json()?.message?.includes('Working days per week is required'),
@@ -150,7 +150,7 @@ async function runAttendanceScheduleTests() {
       employee_id: 'GP8801N',
       firstName: 'Test',
       email: `test.sched.${Date.now()}@gaintpro.com`,
-      department: 'Technology',
+      department: 'IT',
       designation: 'Engineer',
       working_days_per_week: null,
     });
@@ -167,7 +167,7 @@ async function runAttendanceScheduleTests() {
       employee_id: 'GP8801N',
       firstName: 'Test',
       email: `test.sched.${Date.now()}@gaintpro.com`,
-      department: 'Technology',
+      department: 'IT',
       designation: 'Engineer',
       working_days_per_week: 'foo',
     });
@@ -184,7 +184,7 @@ async function runAttendanceScheduleTests() {
       employee_id: 'GP8801N',
       firstName: 'Test',
       email: `test.sched.${Date.now()}@gaintpro.com`,
-      department: 'Technology',
+      department: 'IT',
       designation: 'Engineer',
       working_days_per_week: 7,
     });
@@ -205,7 +205,7 @@ async function runAttendanceScheduleTests() {
       firstName: 'FiveDay',
       lastName: 'Worker',
       email: email5,
-      department: 'Technology',
+      department: 'IT',
       designation: 'Software Engineer',
       working_days_per_week: 5,
     });
@@ -231,7 +231,7 @@ async function runAttendanceScheduleTests() {
       firstName: 'SixDay',
       lastName: 'Worker',
       email: email6,
-      department: 'Operations',
+      department: 'Non-IT',
       designation: 'Operations Specialist',
       working_days_per_week: 6,
     });

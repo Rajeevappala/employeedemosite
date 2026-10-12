@@ -447,12 +447,8 @@ function PFDetails() {
               onChange={handleDeptChange}
             >
               <option value="All">All Departments</option>
-              <option value="Engineering">Engineering</option>
-              <option value="Technology">Technology</option>
-              <option value="HR">HR</option>
-              <option value="Finance">Finance</option>
-              <option value="Operations">Operations</option>
-              <option value="Sales">Sales</option>
+              <option value="IT">IT</option>
+              <option value="Non-IT">Non-IT</option>
             </select>
           </div>
         </div>

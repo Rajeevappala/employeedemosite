@@ -1,3 +1,4 @@
+const ExcelJS = require('exceljs');
 const pool = require('../config/database');
 const { syncApprovedLeaveToAttendance } = require('../services/leaveAttendanceService');
 const { recordAuditLog } = require('../services/auditService');
@@ -157,6 +158,38 @@ const applyLeave = async (req, res, next) => {
         success: false,
         message: 'start_date cannot be after end_date.',
       });
+    }
+
+    // Policy check against organization_leave_settings
+    const requestedDays = Math.round((new Date(trimmedEndDate) - new Date(trimmedStartDate)) / (1000 * 60 * 60 * 24)) + 1;
+    const orgSettingsRes = await client.query(
+      'SELECT minimum_leave_notice_days, maximum_continuous_leave_days FROM public.organization_leave_settings WHERE is_singleton = TRUE LIMIT 1'
+    );
+    if (orgSettingsRes.rows.length > 0) {
+      const orgPolicy = orgSettingsRes.rows[0];
+      const maxContinuous = Number(orgPolicy.maximum_continuous_leave_days);
+      const minNotice = Number(orgPolicy.minimum_leave_notice_days);
+
+      if (maxContinuous > 0 && requestedDays > maxContinuous) {
+        return res.status(400).json({
+          success: false,
+          message: `Requested leave exceeds the maximum continuous limit of ${maxContinuous} days.`,
+        });
+      }
+
+      if (minNotice > 0 && matchedLeaveType !== 'Sick Leave') {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const startDateObj = new Date(trimmedStartDate);
+        startDateObj.setHours(0, 0, 0, 0);
+        const noticeDiffDays = Math.round((startDateObj - today) / (1000 * 60 * 60 * 24));
+        if (noticeDiffDays < minNotice) {
+          return res.status(400).json({
+            success: false,
+            message: `Leave must be requested at least ${minNotice} day(s) in advance.`,
+          });
+        }
+      }
     }
 
     // 4. Validate employee exists in public.employees and is ACTIVE
@@ -500,6 +533,241 @@ const getAdminLeaves = async (req, res, next) => {
       },
       summary,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Controller to export leave requests as a professionally formatted Excel (.xlsx) workbook.
+ * Security:
+ * - Restricted strictly to ADMIN and SUPER_ADMIN roles.
+ * - Respects active filter parameters (status, leave_type, employee_id, department, search, month).
+ * - Generates a real Excel workbook using ExcelJS with auto-filters, bold frozen header, and formatted cells.
+ */
+const exportAdminLeavesReport = async (req, res, next) => {
+  try {
+    const { status, leave_type, employee_id, search, month } = req.query;
+
+    const conditions = [];
+    const queryParams = [];
+
+    // Filter: status
+    if (status !== undefined && status !== null && String(status).trim() !== '' && String(status).trim() !== 'All') {
+      const trimmedStatus = String(status).trim();
+      const matchedStatus = ALLOWED_STATUSES.find(
+        (s) => s.toLowerCase() === trimmedStatus.toLowerCase()
+      );
+      if (!matchedStatus) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid status. Allowed values: ${ALLOWED_STATUSES.join(', ')}.`,
+        });
+      }
+      queryParams.push(matchedStatus);
+      conditions.push(`lr.status = $${queryParams.length}`);
+    }
+
+    // Filter: leave_type
+    if (leave_type !== undefined && leave_type !== null && String(leave_type).trim() !== '' && String(leave_type).trim() !== 'All') {
+      const trimmedType = String(leave_type).trim();
+      const matchedType = ALLOWED_LEAVE_TYPES.find(
+        (t) => t.toLowerCase() === trimmedType.toLowerCase()
+      );
+      if (!matchedType) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid leave_type. Allowed values: ${ALLOWED_LEAVE_TYPES.join(', ')}.`,
+        });
+      }
+      queryParams.push(matchedType);
+      conditions.push(`lr.leave_type = $${queryParams.length}`);
+    }
+
+    // Filter: employee_id
+    if (employee_id !== undefined && employee_id !== null && String(employee_id).trim() !== '' && String(employee_id).trim() !== 'All') {
+      const trimmedEmpId = String(employee_id).trim();
+      queryParams.push(trimmedEmpId);
+      conditions.push(`lr.employee_id = $${queryParams.length}`);
+    }
+
+    // Filter: department
+    const department = req.query.department;
+    if (department !== undefined && department !== null && String(department).trim() !== '' && String(department).trim() !== 'All' && String(department).trim() !== 'All Departments') {
+      const trimmedDept = String(department).trim();
+      queryParams.push(trimmedDept);
+      conditions.push(`e.department ILIKE $${queryParams.length}`);
+    }
+
+    // Filter: search (employee_id, first_name, last_name, email)
+    if (search !== undefined && search !== null && String(search).trim() !== '') {
+      const trimmedSearch = String(search).trim();
+      queryParams.push(`%${trimmedSearch}%`);
+      const searchIdx = queryParams.length;
+      conditions.push(`(
+        lr.employee_id ILIKE $${searchIdx} OR
+        e.first_name ILIKE $${searchIdx} OR
+        e.last_name ILIKE $${searchIdx} OR
+        CONCAT(e.first_name, ' ', e.last_name) ILIKE $${searchIdx} OR
+        e.email ILIKE $${searchIdx}
+      )`);
+    }
+
+    // Filter: month (YYYY-MM)
+    if (month !== undefined && month !== null && String(month).trim() !== '') {
+      const trimmedMonth = String(month).trim();
+      const monthRegex = /^(\d{4})-(0[1-9]|1[0-2])$/;
+      const match = trimmedMonth.match(monthRegex);
+      if (!match) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid month format. Expected YYYY-MM (e.g., 2026-10).',
+        });
+      }
+
+      const year = parseInt(match[1], 10);
+      const monthNum = parseInt(match[2], 10);
+      const daysCount = getDaysInMonth(year, monthNum);
+      const monthStart = `${trimmedMonth}-01`;
+      const monthEnd = `${trimmedMonth}-${String(daysCount).padStart(2, '0')}`;
+
+      queryParams.push(monthEnd);
+      const endIdx = queryParams.length;
+      queryParams.push(monthStart);
+      const startIdx = queryParams.length;
+
+      conditions.push(`lr.start_date <= $${endIdx}::date AND lr.end_date >= $${startIdx}::date`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const exportQuery = `
+      SELECT 
+        lr.id,
+        lr.employee_id,
+        TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS employee_name,
+        e.email,
+        e.department,
+        e.designation,
+        lr.leave_type,
+        TO_CHAR(lr.start_date, 'YYYY-MM-DD') AS start_date,
+        TO_CHAR(lr.end_date, 'YYYY-MM-DD') AS end_date,
+        lr.days,
+        lr.reason,
+        lr.status,
+        lr.admin_comment,
+        lr.reviewed_by,
+        COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.email, '') AS reviewed_by_name,
+        TO_CHAR(lr.reviewed_at, 'YYYY-MM-DD HH24:MI:SS') AS reviewed_at,
+        TO_CHAR(COALESCE(lr.requested_at, lr.created_at), 'YYYY-MM-DD HH24:MI:SS') AS applied_at,
+        lr.created_at
+      FROM public.leave_requests lr
+      JOIN public.employees e ON e.employee_id = lr.employee_id
+      LEFT JOIN public.users u ON u.id = lr.reviewed_by
+      ${whereClause}
+      ORDER BY lr.created_at DESC
+    `;
+
+    const result = await pool.query(exportQuery, queryParams);
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'GaintPro Software Technologies';
+    workbook.lastModifiedBy = 'GaintPro HRM Portal';
+    workbook.created = new Date();
+    workbook.modified = new Date();
+
+    const sheet = workbook.addWorksheet('Leave Report', {
+      views: [{ state: 'frozen', ySplit: 1 }],
+    });
+
+    sheet.columns = [
+      { header: 'Employee ID', key: 'employee_id', width: 16 },
+      { header: 'Employee Name', key: 'employee_name', width: 24 },
+      { header: 'Email', key: 'email', width: 28 },
+      { header: 'Department', key: 'department', width: 16 },
+      { header: 'Designation', key: 'designation', width: 22 },
+      { header: 'Leave Type', key: 'leave_type', width: 15 },
+      { header: 'Start Date', key: 'start_date', width: 14 },
+      { header: 'End Date', key: 'end_date', width: 14 },
+      { header: 'Total Days', key: 'total_days', width: 13 },
+      { header: 'Reason', key: 'reason', width: 32 },
+      { header: 'Status', key: 'status', width: 14 },
+      { header: 'Admin Comment', key: 'admin_comment', width: 32 },
+      { header: 'Reviewed By', key: 'reviewed_by', width: 24 },
+      { header: 'Reviewed At', key: 'reviewed_at', width: 22 },
+      { header: 'Applied At', key: 'applied_at', width: 22 },
+    ];
+
+    // Format Header Row
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E293B' },
+    };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerRow.height = 28;
+
+    // Enable Filters on Header Row
+    sheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: 15 },
+    };
+
+    if (result.rows.length === 0) {
+      const emptyRow = sheet.addRow({
+        employee_id: 'No leave records found for the selected filters.',
+      });
+      sheet.mergeCells(`A${emptyRow.number}:O${emptyRow.number}`);
+      const emptyCell = sheet.getCell(`A${emptyRow.number}`);
+      emptyCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      emptyCell.font = { name: 'Segoe UI', size: 10, italic: true, color: { argb: 'FF64748B' } };
+      emptyRow.height = 24;
+    } else {
+      result.rows.forEach((row) => {
+        const addedRow = sheet.addRow({
+          employee_id: row.employee_id || '',
+          employee_name: row.employee_name || '',
+          email: row.email || '',
+          department: row.department || '',
+          designation: row.designation || '',
+          leave_type: row.leave_type || '',
+          start_date: row.start_date || '',
+          end_date: row.end_date || '',
+          total_days: Number(row.days || 0),
+          reason: row.reason || '',
+          status: row.status || '',
+          admin_comment: row.admin_comment || '',
+          reviewed_by: row.reviewed_by_name || '',
+          reviewed_at: row.reviewed_at || '',
+          applied_at: row.applied_at || '',
+        });
+
+        addedRow.getCell('reason').alignment = { wrapText: true, vertical: 'top' };
+        addedRow.getCell('admin_comment').alignment = { wrapText: true, vertical: 'top' };
+        addedRow.getCell('total_days').alignment = { horizontal: 'center', vertical: 'middle' };
+        addedRow.getCell('status').alignment = { horizontal: 'center', vertical: 'middle' };
+        addedRow.getCell('start_date').alignment = { horizontal: 'center', vertical: 'middle' };
+        addedRow.getCell('end_date').alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const todayStr = new Date().toISOString().substring(0, 10);
+    const filename = `leave_report_${todayStr}.xlsx`;
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename}"`
+    );
+    res.setHeader('Content-Length', buffer.length);
+
+    return res.status(200).send(buffer);
   } catch (error) {
     next(error);
   }
@@ -1003,5 +1271,6 @@ module.exports = {
   getAdminLeaveBalances,
   updateLeaveStatus,
   cancelLeaveRequest,
+  exportAdminLeavesReport,
 };
 

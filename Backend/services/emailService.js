@@ -32,6 +32,18 @@ const createTransporter = () => {
 };
 
 /**
+ * Masks email address for secure logging in production environments.
+ */
+const maskEmail = (em) => {
+  if (!em || typeof em !== 'string') return '';
+  const trimmed = em.trim();
+  const [local, dom] = trimmed.split('@');
+  if (!dom) return '***';
+  const maskedLocal = local.length <= 2 ? local[0] + '***' : local[0] + '***' + local[local.length - 1];
+  return `${maskedLocal}@${dom}`;
+};
+
+/**
  * Sanitizes error messages to ensure SMTP credentials or passwords are never logged.
  */
 const sanitizeEmailError = (message) => {
@@ -42,14 +54,53 @@ const sanitizeEmailError = (message) => {
 };
 
 /**
+ * In-memory buffer of recent emails recorded in test mode.
+ * STRICT SECURITY GUARANTEE: Never populated or accessible in NODE_ENV === 'production'.
+ */
+let testDispatchedEmails = [];
+
+const recordTestEmail = (emailData) => {
+  if (process.env.NODE_ENV === 'production') return;
+  testDispatchedEmails.push(emailData);
+  if (testDispatchedEmails.length > 100) {
+    testDispatchedEmails.shift();
+  }
+};
+
+const getTestDispatchedEmails = () => {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Test email inspection is strictly forbidden in production.');
+  }
+  return [...testDispatchedEmails];
+};
+
+const getLastTestEmailFor = (email) => {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Test email inspection is strictly forbidden in production.');
+  }
+  const filtered = testDispatchedEmails.filter(
+    (e) => e.to.toLowerCase() === email.trim().toLowerCase()
+  );
+  return filtered[filtered.length - 1] || null;
+};
+
+const clearTestEmails = () => {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Test email clearing is strictly forbidden in production.');
+  }
+  testDispatchedEmails = [];
+};
+
+/**
  * Sends a professional OTP email to the user.
  *
  * @param {Object} options
  * @param {string} options.to - Recipient email address.
  * @param {string} options.otp - 6-digit numeric OTP.
- * @returns {Promise<{ success: boolean, messageId: string }>}
+ * @param {boolean} [options.isTestMode=false] - Non-production test flag.
+ * @returns {Promise<{ success: boolean, messageId: string, isTestMock?: boolean }>}
  */
-const sendOtpEmail = async ({ to, otp }) => {
+const sendOtpEmail = async ({ to, otp, isTestMode = false }) => {
   if (!to) {
     const error = new Error('Recipient email is required.');
     error.statusCode = 400;
@@ -62,7 +113,41 @@ const sendOtpEmail = async ({ to, otp }) => {
     throw error;
   }
 
-  const from = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'no-reply@gaintpro.com';
+  // =========================================================================
+  // TEST ENVIRONMENT EMAIL ISOLATION
+  // When NODE_ENV === 'test' or non-production test suite flag is set:
+  // - Do NOT connect to smtp.gmail.com.
+  // - Do NOT send real emails.
+  // - Do NOT require real SMTP credentials.
+  // - Preserve OTP generation, hashing, database storage, and expiry.
+  // STRICT SECURITY REQUIREMENT: NEVER allow NODE_ENV === 'production' to bypass real email.
+  // =========================================================================
+  const isProduction = process.env.NODE_ENV === 'production';
+  const shouldMockEmail = !isProduction && (process.env.NODE_ENV === 'test' || isTestMode === true);
+
+  if (shouldMockEmail) {
+    const mockMessageId = `<test-mock-${Date.now()}-${Math.random().toString(36).substring(2, 9)}@test.local>`;
+    recordTestEmail({
+      to,
+      otp,
+      messageId: mockMessageId,
+      dispatchedAt: new Date().toISOString(),
+    });
+
+    console.log('[MOCK_EMAIL_DISPATCH] Test mode active — OTP email simulated in memory (no SMTP network call):', {
+      to,
+      messageId: mockMessageId,
+    });
+
+    return {
+      success: true,
+      messageId: mockMessageId,
+      isTestMock: true,
+    };
+  }
+
+  const rawFrom = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'no-reply@gaintpro.com';
+  const from = rawFrom.includes('<') ? rawFrom : `"GaintPro HRM Portal" <${rawFrom}>`;
   const subject = 'Your GaintPro Employee Portal Login OTP';
 
   const textContent = `Hello,
@@ -124,6 +209,9 @@ GaintPro Employee Portal`;
 </body>
 </html>`;
 
+  const displayEmail = isProduction ? maskEmail(to) : to;
+  console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Email dispatch started via SMTP transport. Recipient: ${displayEmail}`);
+
   try {
     const transporter = createTransporter();
     const info = await transporter.sendMail({
@@ -134,19 +222,16 @@ GaintPro Employee Portal`;
       html: htmlContent,
     });
 
+    console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] SMTP accepted message: messageId=${info.messageId || 'N/A'}, response='${info.response || 'N/A'}'`);
+
     return {
       success: true,
       messageId: info.messageId,
     };
   } catch (error) {
-    console.error('SMTP email error:', {
-      name: error?.name,
-      message: sanitizeEmailError(error?.message),
-      code: error?.code,
-      command: error?.command,
-      response: error?.response,
-      responseCode: error?.responseCode,
-    });
+    const sanitizedErrorMsg = sanitizeEmailError(error?.message);
+    const errCode = error?.code || error?.responseCode || 'UNKNOWN';
+    console.error(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] SMTP rejected message: code=${errCode}, responseCode=${error?.responseCode || 'N/A'}, command=${error?.command || 'N/A'}, error=${sanitizedErrorMsg}`);
 
     const deliveryError = new Error('Failed to deliver verification code. Please try again later.');
     deliveryError.statusCode = 502;
@@ -159,4 +244,8 @@ module.exports = {
   // Exported for testing or verification
   createTransporter,
   sanitizeEmailError,
+  // Test-only utilities (guarded against production usage)
+  getTestDispatchedEmails,
+  getLastTestEmailFor,
+  clearTestEmails,
 };

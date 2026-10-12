@@ -126,6 +126,33 @@
   height: 16px;
 }
 
+.admin-btn-mark-holiday {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.125rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background-color: #7c3aed;
+  color: #ffffff;
+  border: 1px solid #7c3aed;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(124, 58, 237, 0.15);
+}
+
+.admin-btn-mark-holiday:hover {
+  background-color: #6d28d9;
+  border-color: #6d28d9;
+  box-shadow: 0 2px 4px rgba(124, 58, 237, 0.25);
+}
+
+.admin-btn-mark-holiday svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* Date Bar */
 .admin-att-date-bar {
   display: flex;
@@ -296,6 +323,7 @@
 .border-top-blue   { &::before { background-color: #2563eb; } }
 .border-top-yellow { &::before { background-color: #ca8a04; } }
 .border-top-purple { &::before { background-color: #9333ea; } }
+.border-top-violet { &::before { background-color: #7c3aed; } }
 
 .stat-label {
   font-size: 0.75rem;
@@ -344,6 +372,7 @@
 .text-blue   { color: #2563eb; }
 .text-yellow { color: #ca8a04; }
 .text-purple { color: #9333ea; }
+.text-violet { color: #7c3aed; }
 
 /* ==========================================================================
    Search & Filters Bar
@@ -844,6 +873,16 @@
   color: #16a34a !important;
 }
 
+.icon-purple {
+  background-color: #ede9fe !important;
+  color: #7c3aed !important;
+}
+
+.icon-amber {
+  background-color: #fef3c7 !important;
+  color: #d97706 !important;
+}
+
 .admin-confirm-icon-wrap svg {
   width: 28px;
   height: 28px;
@@ -994,6 +1033,28 @@
   background-color: #15803d !important;
 }
 
+.admin-btn-holiday {
+  background-color: #7c3aed !important;
+  border-color: #7c3aed !important;
+  color: #ffffff !important;
+}
+
+.admin-btn-holiday:hover {
+  background-color: #6d28d9 !important;
+  border-color: #6d28d9 !important;
+}
+
+.admin-btn-warning {
+  background-color: #d97706 !important;
+  border-color: #d97706 !important;
+  color: #ffffff !important;
+}
+
+.admin-btn-warning:hover {
+  background-color: #b45309 !important;
+  border-color: #b45309 !important;
+}
+
 /* ==========================================================================
    Responsive Breakpoints
    320px, 375px, 414px, 768px, 1024px, 1440px, 1920px
@@ -1040,7 +1101,8 @@
     align-items: stretch;
   }
 
-  .admin-att-header-actions .admin-btn-mark-all {
+  .admin-att-header-actions .admin-btn-mark-all,
+  .admin-att-header-actions .admin-btn-mark-holiday {
     width: 100%;
     justify-content: center;
   }

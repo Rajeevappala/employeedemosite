@@ -26,9 +26,10 @@ DROP TABLE IF EXISTS users CASCADE;
 -- -----------------------------------------------------------------------------
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    admin_id VARCHAR(50) UNIQUE NULL,
     employee_id VARCHAR(20) NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
-    role VARCHAR(30) NOT NULL CHECK (role IN ('EMPLOYEE', 'ADMIN', 'SUPER_ADMIN')),
+    role VARCHAR(30) NOT NULL CHECK (role IN ('EMPLOYEE', 'ADMIN')),
     status VARCHAR(30) NOT NULL CHECK (status IN ('ACTIVE', 'INACTIVE', 'SUSPENDED')),
     first_name VARCHAR(100) NULL,
     last_name VARCHAR(100) NULL,
@@ -324,4 +325,38 @@ CREATE INDEX idx_announcements_target_employee_id ON announcements(target_employ
 -- Announcement reads indexes
 CREATE INDEX idx_announcement_reads_employee_id ON announcement_reads(employee_id);
 CREATE INDEX idx_announcement_reads_announcement_id ON announcement_reads(announcement_id);
+
+-- -----------------------------------------------------------------------------
+-- 14. STATUTORY PAYROLL ARCHIVE TABLE (8-Year Compliance Retention)
+-- Preserves legally mandated payroll and tax records for deleted employees
+-- Under Indian Income Tax Act 1961 Section 44AA and EPF Act 1952
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS statutory_payroll_archive (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    original_payroll_id UUID NOT NULL,
+    employee_id VARCHAR(50) NOT NULL,
+    employee_name VARCHAR(255),
+    designation VARCHAR(100),
+    department VARCHAR(100),
+    month VARCHAR(20) NOT NULL,
+    year INTEGER NOT NULL,
+    total_days INTEGER,
+    working_days INTEGER,
+    paid_days NUMERIC(5,2),
+    loss_of_pay_days NUMERIC(5,2),
+    gross_earnings NUMERIC(12,2) NOT NULL,
+    total_deductions NUMERIC(12,2) NOT NULL,
+    net_salary NUMERIC(12,2) NOT NULL,
+    statutory_details JSONB,
+    deductions_breakdown JSONB,
+    earnings_breakdown JSONB,
+    retention_until TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '8 years'),
+    archived_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    archived_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    deletion_reason TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_statutory_payroll_archive_emp ON statutory_payroll_archive(employee_id);
+CREATE INDEX IF NOT EXISTS idx_statutory_payroll_archive_retention ON statutory_payroll_archive(retention_until);
+
 

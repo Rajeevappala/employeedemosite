@@ -32,20 +32,20 @@ router.patch(
 );
 
 // GET /api/admin/leaves
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN
+// Strictly protected: requires valid JWT session and role ADMIN
 router.get(
   '/admin/leaves',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   leaveController.getAdminLeaves
 );
 
 // PATCH /api/admin/leaves/:leaveId/status
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN
+// Strictly protected: requires valid JWT session and role ADMIN
 router.patch(
   '/admin/leaves/:leaveId/status',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   leaveController.updateLeaveStatus
 );
 

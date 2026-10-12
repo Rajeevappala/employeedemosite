@@ -5,38 +5,38 @@ const adminPfController = require('../controllers/adminPfController');
 const { authenticateToken, requireRole } = require('../middleware/authMiddleware');
 
 // GET /api/admin/pf
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN.
+// Strictly protected: requires valid JWT session and role ADMIN.
 router.get(
   '/',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   adminPfController.getAdminPfList
 );
 
 // GET /api/admin/pf/:employeeId
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN.
+// Strictly protected: requires valid JWT session and role ADMIN.
 router.get(
   '/:employeeId',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   adminPfController.getAdminPfByEmployeeId
 );
 
 // PUT /api/admin/pf/:employeeId
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN.
+// Strictly protected: requires valid JWT session and role ADMIN.
 router.put(
   '/:employeeId',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   adminPfController.updateAdminPf
 );
 
 // DELETE /api/admin/pf/:employeeId
-// Strictly protected: requires valid JWT session and role ADMIN or SUPER_ADMIN.
+// Strictly protected: requires valid JWT session and role ADMIN.
 router.delete(
   '/:employeeId',
   authenticateToken,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN'),
   adminPfController.deleteAdminPf
 );
 

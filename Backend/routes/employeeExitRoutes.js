@@ -14,9 +14,13 @@ router.get('/status', employeeExitController.getExitStatus);
 // PATCH /api/employee/exit/withdraw
 router.patch('/withdraw', employeeExitController.withdrawResignation);
 
-// Document downloads (completed exits)
+// Document downloads (legacy endpoints)
 router.get('/relieving-letter', employeeExitController.downloadRelievingLetter);
 router.get('/experience-certificate', employeeExitController.downloadExperienceCertificate);
 router.get('/fnf-statement', employeeExitController.downloadFnfStatement);
+
+// Document download/view by document ID
+router.get('/documents/:documentId/download', employeeExitController.downloadExitDocumentById);
+router.get('/documents/:documentId/view', employeeExitController.viewExitDocumentById);
 
 module.exports = router;

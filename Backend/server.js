@@ -21,10 +21,10 @@ const adminLeaveRoutes = require('./routes/adminLeaveRoutes');
 const adminDocumentRoutes = require('./routes/adminDocumentRoutes');
 const adminPfRoutes = require('./routes/adminPfRoutes');
 const adminPayrollRoutes = require('./routes/adminPayrollRoutes');
-const adminAnnouncementRoutes = require('./routes/adminAnnouncementRoutes');
-const employeeAnnouncementRoutes = require('./routes/employeeAnnouncementRoutes');
 const adminExitRoutes = require('./routes/adminExitRoutes');
+const adminSettingsRoutes = require('./routes/adminSettingsRoutes');
 const employeeExitRoutes = require('./routes/employeeExitRoutes');
+const employeeBankDetailsRoutes = require('./routes/employeeBankDetailsRoutes');
 const notFoundMiddleware = require('./middleware/notFoundMiddleware');
 const errorMiddleware = require('./middleware/errorMiddleware');
 const { requireActiveEmployee } = require('./middleware/activeEmployeeMiddleware');
@@ -35,6 +35,9 @@ validateEnvironment();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Trust reverse proxy (e.g. Nginx, Cloudflare) for secure client IP detection and protocol
+app.set('trust proxy', 1);
 
 // Security Headers: Helmet customized for safe PDF blob viewing and API isolation
 app.use(
@@ -63,9 +66,10 @@ app.use(
 );
 
 // CORS: Strict environment-controlled allowlist
+const isProduction = process.env.NODE_ENV === 'production';
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
-  : ['http://localhost:5173', 'http://127.0.0.1:5173'];
+  : (isProduction ? [] : ['http://localhost:5173', 'http://127.0.0.1:5173']);
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -125,6 +129,9 @@ app.use('/api/employee/payslips', requireActiveEmployee, employeePayslipRoutes);
 // Employee PF routes
 app.use('/api/employee/pf', requireActiveEmployee, employeePfRoutes);
 
+// Employee Bank Details routes
+app.use('/api/employee/bank-details', requireActiveEmployee, employeeBankDetailsRoutes);
+
 // Employee leave routes
 app.use('/api/employee/leaves', requireActiveEmployee, leaveRoutes);
 
@@ -134,8 +141,6 @@ app.use('/api/employee/attendance', requireActiveEmployee, attendanceRoutes);
 // Employee dashboard routes
 app.use('/api/employee/dashboard', requireActiveEmployee, employeeDashboardRoutes);
 
-// Employee Announcement routes
-app.use('/api/employee/announcements', requireActiveEmployee, employeeAnnouncementRoutes);
 
 // Employee business routes
 app.use('/api/employee', requireActiveEmployee, employeeRoutes);
@@ -164,11 +169,12 @@ app.use('/api/admin/pf', adminPfRoutes);
 // Admin Payroll routes
 app.use('/api/admin/payroll', adminPayrollRoutes);
 
-// Admin Announcement routes
-app.use('/api/admin/announcements', adminAnnouncementRoutes);
 
 // Admin Exit & Offboarding routes
 app.use('/api/admin/exit', adminExitRoutes);
+
+// Admin Settings routes
+app.use('/api/admin/settings', adminSettingsRoutes);
 
 // 404 Not Found Handler
 app.use(notFoundMiddleware);
@@ -190,14 +196,61 @@ const testDatabaseConnection = async () => {
   }
 };
 
+let server;
+
 // Start server
 const startServer = async () => {
   await testDatabaseConnection();
 
-  app.listen(PORT, () => {
+  server = app.listen(PORT, () => {
     console.log(`Server is running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
   });
 };
+
+const handleGracefulShutdown = (signal) => {
+  console.log(`\nReceived ${signal}. Starting graceful shutdown...`);
+
+  // Force exit after 10s timeout to prevent hanging connections
+  const forceTimer = setTimeout(() => {
+    console.error('Graceful shutdown timed out after 10s. Forcing exit.');
+    process.exit(1);
+  }, 10000);
+  forceTimer.unref();
+
+  if (server) {
+    server.close(async (err) => {
+      if (err) {
+        console.error('Error closing HTTP server:', err.message);
+      } else {
+        console.log('HTTP server closed. Stopped accepting new connections.');
+      }
+
+      try {
+        await pool.end();
+        console.log('PostgreSQL connection pool closed successfully.');
+        clearTimeout(forceTimer);
+        process.exit(0);
+      } catch (poolErr) {
+        console.error('Error closing PostgreSQL pool:', poolErr.message);
+        clearTimeout(forceTimer);
+        process.exit(1);
+      }
+    });
+  } else {
+    pool.end().then(() => {
+      console.log('PostgreSQL connection pool closed.');
+      clearTimeout(forceTimer);
+      process.exit(0);
+    }).catch((poolErr) => {
+      console.error('Error closing PostgreSQL pool:', poolErr.message);
+      clearTimeout(forceTimer);
+      process.exit(1);
+    });
+  }
+};
+
+process.on('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => handleGracefulShutdown('SIGINT'));
 
 startServer();
 

@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const birthdayService = require('../services/birthdayService');
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -130,6 +131,7 @@ const getEmployeeDashboard = async (req, res, next) => {
       recentDocsResult,
       docCountResult,
       pfResult,
+      birthdayData,
     ] = await Promise.all([
       // 1. Profile
       pool.query(
@@ -287,6 +289,9 @@ const getEmployeeDashboard = async (req, res, next) => {
          LIMIT 1`,
         [employeeId]
       ),
+
+      // 10. Active Employee Birthdays this month
+      birthdayService.getCurrentMonthBirthdays({ forAdmin: false }),
     ]);
 
     // Check if employee profile exists
@@ -298,58 +303,6 @@ const getEmployeeDashboard = async (req, res, next) => {
     }
 
     const empProfile = profileResult.rows[0];
-    const dept = empProfile.department || '';
-
-    // Query visible announcements and unread count for this employee
-    const [latestAnnouncementsRes, unreadAnnouncementsCountRes] = await Promise.all([
-      pool.query(`
-        SELECT 
-          a.id,
-          a.title,
-          a.content,
-          a.priority,
-          a.target_type,
-          a.publish_at,
-          a.created_at,
-          (ar.id IS NOT NULL) AS is_read,
-          ar.read_at
-        FROM public.announcements a
-        LEFT JOIN public.announcement_reads ar 
-          ON ar.announcement_id = a.id AND ar.employee_id = $1
-        WHERE a.status = 'PUBLISHED'
-          AND (a.publish_at IS NULL OR a.publish_at <= NOW())
-          AND (a.expires_at IS NULL OR a.expires_at >= NOW())
-          AND (
-            a.target_type = 'ALL' 
-            OR (a.target_type = 'DEPARTMENT' AND LOWER(a.target_department) = LOWER($2))
-            OR (a.target_type = 'EMPLOYEE' AND a.target_employee_id = $1)
-          )
-        ORDER BY 
-          CASE a.priority 
-            WHEN 'Urgent' THEN 1 
-            WHEN 'High' THEN 2 
-            ELSE 3 
-          END ASC,
-          COALESCE(a.publish_at, a.created_at) DESC
-        LIMIT 3
-      `, [employeeId, dept]),
-
-      pool.query(`
-        SELECT COUNT(*) AS unread_total
-        FROM public.announcements a
-        LEFT JOIN public.announcement_reads ar 
-          ON ar.announcement_id = a.id AND ar.employee_id = $1
-        WHERE a.status = 'PUBLISHED'
-          AND (a.publish_at IS NULL OR a.publish_at <= NOW())
-          AND (a.expires_at IS NULL OR a.expires_at >= NOW())
-          AND (
-            a.target_type = 'ALL' 
-            OR (a.target_type = 'DEPARTMENT' AND LOWER(a.target_department) = LOWER($2))
-            OR (a.target_type = 'EMPLOYEE' AND a.target_employee_id = $1)
-          )
-          AND ar.id IS NULL
-      `, [employeeId, dept])
-    ]);
 
     // Compute monthly attendance summary
     const monthRows = monthAttendanceResult.rows;
@@ -525,8 +478,8 @@ const getEmployeeDashboard = async (req, res, next) => {
         latest_payslip: latestPayslip,
         recent_documents: recentDocsResult.rows,
         pf_summary: pfSummary,
-        latest_announcements: latestAnnouncementsRes.rows,
-        unread_announcements_count: parseInt(unreadAnnouncementsCountRes.rows[0]?.unread_total || 0, 10),
+        birthday_employees: birthdayData.birthdays,
+        birthday_month_name: birthdayData.current_month_name,
       },
     });
   } catch (error) {

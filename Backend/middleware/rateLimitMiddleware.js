@@ -5,6 +5,8 @@ const rateLimit = require('express-rate-limit');
  */
 const createRateLimitResponse = (message) => {
   return (req, res) => {
+    const timestamp = new Date().toISOString();
+    console.warn(`[OTP_DEBUG_BACKEND] [${timestamp}] Rate-limit rejection (IP level): ${req.method} ${req.originalUrl}. HTTP 429`);
     res.status(429).json({
       success: false,
       message,

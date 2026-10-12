@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const pool = require('../config/database');
 const storageService = require('../services/storageService');
 const { recordAuditLog } = require('../services/auditService');
+const { maskAccountNumber } = require('../services/bankEncryptionService');
 
 /**
  * Controller to fetch the profile of the currently authenticated employee.
@@ -66,11 +67,57 @@ const getProfile = async (req, res, next) => {
 
     const emp = result.rows[0];
 
+    // Fetch employee bank details (masked account number only)
+    const bankRes = await pool.query(
+      `SELECT 
+         id,
+         employee_id,
+         account_holder_name,
+         bank_name,
+         account_number_last4,
+         ifsc_code,
+         branch_name,
+         branch_city,
+         branch_state,
+         account_type,
+         verification_status,
+         admin_remarks,
+         created_at,
+         updated_at
+       FROM public.employee_bank_details
+       WHERE employee_id = $1`,
+      [employeeId]
+    );
+
+    let bankDetails = null;
+    if (bankRes.rows.length > 0) {
+      const b = bankRes.rows[0];
+      bankDetails = {
+        id: b.id,
+        employee_id: b.employee_id,
+        account_holder_name: b.account_holder_name,
+        bank_name: b.bank_name,
+        account_number: maskAccountNumber(b.account_number_last4),
+        account_number_last4: b.account_number_last4,
+        ifsc_code: b.ifsc_code,
+        branch_name: b.branch_name,
+        branch_city: b.branch_city,
+        branch_state: b.branch_state,
+        account_type: b.account_type,
+        verification_status: b.verification_status,
+        admin_remarks: b.admin_remarks,
+        created_at: b.created_at,
+        updated_at: b.updated_at,
+      };
+    }
+
     // Return sanitized response with photo endpoint instead of internal storage_key
     return res.status(200).json({
       success: true,
       data: {
         ...emp,
+        bank_details: bankDetails,
+        bank: bankDetails,
         photo_url: emp.has_profile_photo ? '/api/employee/profile/photo' : null,
       },
     });
@@ -90,6 +137,13 @@ const getProfile = async (req, res, next) => {
  */
 const updateProfile = async (req, res, next) => {
   try {
+    if (req.user?.role === 'EMPLOYEE') {
+      return res.status(403).json({
+        success: false,
+        message: 'Employee profile information is managed by HR and cannot be modified by employees. Profile details are strictly read-only; only profile photos may be updated.',
+      });
+    }
+
     const employeeId = req.user?.employee_id;
 
     if (!employeeId) {

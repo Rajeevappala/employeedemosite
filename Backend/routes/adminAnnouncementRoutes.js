@@ -4,8 +4,8 @@ const router = express.Router();
 const adminAnnouncementController = require('../controllers/adminAnnouncementController');
 const { authenticateToken, requireRole } = require('../middleware/authMiddleware');
 
-// All admin announcement routes require authentication and ADMIN or SUPER_ADMIN role
-router.use(authenticateToken, requireRole('ADMIN', 'SUPER_ADMIN'));
+// All admin announcement routes require authentication and ADMIN role
+router.use(authenticateToken, requireRole('ADMIN'));
 
 // GET /api/admin/announcements
 router.get('/', adminAnnouncementController.getAdminAnnouncements);

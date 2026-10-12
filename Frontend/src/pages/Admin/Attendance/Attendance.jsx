@@ -41,6 +41,23 @@ function formatDate(dateStr) {
   return dateStr;
 }
 
+// Helper to format date string "2026-10-07" -> "07 October 2026"
+function formatFullDate(dateStr) {
+  if (!dateStr) return '-';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const fullMonths = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    const day = parts[2];
+    const month = fullMonths[parseInt(parts[1], 10) - 1] || parts[1];
+    const year = parts[0];
+    return `${day} ${month} ${year}`;
+  }
+  return dateStr;
+}
+
 // Helper to get current runtime date formatted as YYYY-MM-DD
 function getTodayIso() {
   const now = new Date();
@@ -95,6 +112,7 @@ function Attendance() {
     workFromHome: 0,
     halfDay: 0,
     weekOff: 0,
+    holiday: 0,
   });
   const [unmarkedCount, setUnmarkedCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -105,12 +123,15 @@ function Attendance() {
   const [modalStatus, setModalStatus] = useState('Present');
   const [modalRemarks, setModalRemarks] = useState('');
   const [isMarkAllModalOpen, setIsMarkAllModalOpen] = useState(false);
+  const [isHolidayModalOpen, setIsHolidayModalOpen] = useState(false);
+  const [holidayRemarks, setHolidayRemarks] = useState('');
+  const [holidayServerWarning, setHolidayServerWarning] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   // Lock background body scroll when any modal is open
   useEffect(() => {
-    const isAnyModalOpen = Boolean(editModalEmployee || isMarkAllModalOpen);
+    const isAnyModalOpen = Boolean(editModalEmployee || isMarkAllModalOpen || isHolidayModalOpen);
     if (isAnyModalOpen) {
       const orig = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
@@ -118,7 +139,7 @@ function Attendance() {
         document.body.style.overflow = orig;
       };
     }
-  }, [editModalEmployee, isMarkAllModalOpen]);
+  }, [editModalEmployee, isMarkAllModalOpen, isHolidayModalOpen]);
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -207,6 +228,7 @@ function Attendance() {
           workFromHome: s.work_from_home || 0,
           halfDay: s.half_day || 0,
           weekOff: s.week_off || 0,
+          holiday: s.holiday || 0,
         });
 
         const unmarkCount = s.not_marked !== undefined ? s.not_marked : rows.filter((r) => r.status === 'Unmarked').length;
@@ -231,18 +253,18 @@ function Attendance() {
     return () => clearTimeout(timer);
   }, [fetchAttendance]);
 
-  // Distinct departments dynamically collected from real rows
-  const departmentOptions = useMemo(() => {
-    const depts = new Set(attendanceRows.map((r) => r.department).filter(Boolean));
-    return ['All Departments', ...Array.from(depts)];
-  }, [attendanceRows]);
+  // Department options strictly restricted to All Departments, IT, and Non-IT
+  const departmentOptions = ['All Departments', 'IT', 'Non-IT'];
 
   // Client-side department filtering
   const filteredRows = useMemo(() => {
     if (selectedDept === 'All Departments') {
       return attendanceRows;
     }
-    return attendanceRows.filter((row) => row.department === selectedDept);
+    return attendanceRows.filter((row) => {
+      const dept = (row.department || '').trim();
+      return dept.toLowerCase() === selectedDept.toLowerCase();
+    });
   }, [attendanceRows, selectedDept]);
 
   // Open Edit / Mark Modal for a specific employee
@@ -319,6 +341,77 @@ function Attendance() {
     }
   };
 
+  // Calculate existing non-holiday records for selected date
+  const existingNonHoliday = useMemo(() => {
+    const breakdown = [];
+    if (dailySummary.present > 0) breakdown.push({ status: 'Present', count: dailySummary.present });
+    if (dailySummary.absent > 0) breakdown.push({ status: 'Absent', count: dailySummary.absent });
+    if (dailySummary.halfDay > 0) breakdown.push({ status: 'Half Day', count: dailySummary.halfDay });
+    if (dailySummary.leave > 0) breakdown.push({ status: 'Leave', count: dailySummary.leave });
+    if (dailySummary.workFromHome > 0) breakdown.push({ status: 'Work From Home', count: dailySummary.workFromHome });
+    const totalNonHoliday = breakdown.reduce((acc, curr) => acc + curr.count, 0);
+    return { totalNonHoliday, breakdown };
+  }, [dailySummary]);
+
+  // Open Holiday Confirmation Modal
+  const handleOpenHolidayModal = () => {
+    setIsHolidayModalOpen(true);
+    setHolidayRemarks('');
+    setHolidayServerWarning(null);
+  };
+
+  // Cancel Holiday Confirmation Modal
+  const handleCancelHolidayModal = () => {
+    setIsHolidayModalOpen(false);
+    setHolidayServerWarning(null);
+    if (existingNonHoliday.totalNonHoliday > 0 || holidayServerWarning) {
+      showToast('Holiday marking cancelled. No attendance records were changed.');
+    }
+  };
+
+  // Confirm Mark Holiday for All Active Employees
+  const handleConfirmMarkHoliday = async (shouldForceOverwrite = false) => {
+    setSubmitting(true);
+    try {
+      const payload = {
+        attendance_date: selectedDate,
+      };
+      if (holidayRemarks.trim()) {
+        payload.remarks = holidayRemarks.trim();
+      }
+      if (shouldForceOverwrite || existingNonHoliday.totalNonHoliday > 0) {
+        payload.confirm_overwrite = true;
+      }
+
+      const res = await api.admin.markHoliday(payload);
+      setIsHolidayModalOpen(false);
+      setHolidayServerWarning(null);
+
+      if (res && res.already_marked) {
+        showToast(res.message || `${formatDate(selectedDate)} is already marked as Holiday for all active employees.`);
+      } else if (res && res.data) {
+        const { employees_affected, created, updated } = res.data;
+        if (updated > 0) {
+          showToast(`Holiday marked successfully. ${formatDate(selectedDate)} — Created: ${created}, Updated: ${updated}, Total affected: ${employees_affected}`);
+        } else {
+          showToast(`✓ Organization holiday marked successfully. ${formatDate(selectedDate)} — ${employees_affected} active employees affected.`);
+        }
+      } else {
+        showToast('Holiday marked successfully for all active employees.');
+      }
+      fetchAttendance();
+    } catch (err) {
+      console.error('Mark holiday error:', err);
+      if (err.data?.require_confirmation || err.status === 409) {
+        setHolidayServerWarning(err.data || { message: err.message });
+      } else {
+        showToast(err.message || 'Failed to mark holiday');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const getStatusBadgeClass = (status) => {
     switch (status) {
       case 'Present':
@@ -365,6 +458,23 @@ function Attendance() {
           </div>
 
           <div className="admin-att-header-actions">
+            {/* Mark Holiday for All Employees Button */}
+            <button
+              type="button"
+              className="admin-btn-holiday admin-btn-mark-holiday"
+              onClick={handleOpenHolidayModal}
+              title="Mark selected date as Holiday for all active employees"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+                <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" />
+              </svg>
+              <span>Mark Holiday for All</span>
+            </button>
+
             {/* Mark All Present Button */}
             <button
               type="button"
@@ -519,6 +629,16 @@ function Attendance() {
               <span className="stat-unit">Week Off</span>
             </div>
             <span className="stat-subtext">Weekend / Rest day</span>
+          </div>
+
+          {/* Holiday */}
+          <div className="admin-att-stat-card border-top-violet">
+            <span className="stat-label">Holiday</span>
+            <div className="stat-value-group">
+              <span className="stat-number text-violet">{dailySummary.holiday || 0}</span>
+              <span className="stat-unit">Holiday</span>
+            </div>
+            <span className="stat-subtext">Company declared</span>
           </div>
         </div>
       </section>
@@ -908,6 +1028,178 @@ function Attendance() {
               >
                 {submitting ? 'Marking...' : 'Confirm & Mark Present'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================================
+          CONFIRM MARK HOLIDAY MODAL
+          ==================================================================== */}
+      {isHolidayModalOpen && (
+        <div className="admin-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="holiday-modal-title">
+          <div className="admin-modal-container admin-confirm-modal" style={{ maxWidth: '480px' }}>
+            <div className="admin-modal-header">
+              <h2 id="holiday-modal-title" className="admin-modal-title">Mark Organization Holiday</h2>
+              <button
+                type="button"
+                className="admin-modal-close-btn"
+                onClick={handleCancelHolidayModal}
+                aria-label="Close modal"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="admin-confirm-body" style={{ padding: '1.5rem 1.5rem 1rem' }}>
+              <div
+                className={`admin-confirm-icon-wrap ${
+                  existingNonHoliday.totalNonHoliday > 0 || holidayServerWarning ? 'icon-amber' : 'icon-purple'
+                }`}
+                aria-hidden="true"
+              >
+                {existingNonHoliday.totalNonHoliday > 0 || holidayServerWarning ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                    <line x1="16" y1="2" x2="16" y2="6" />
+                    <line x1="8" y1="2" x2="8" y2="6" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                    <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" />
+                  </svg>
+                )}
+              </div>
+
+              {dailySummary.totalEmployees > 0 && dailySummary.holiday === dailySummary.totalEmployees ? (
+                <div style={{ textAlign: 'center', width: '100%' }}>
+                  <p className="admin-confirm-message" style={{ color: '#6d28d9' }}>
+                    Date Already Marked as Holiday
+                  </p>
+                  <p className="text-muted" style={{ fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                    All active employees ({dailySummary.totalEmployees}) are already marked as Holiday for {formatFullDate(selectedDate)}.
+                  </p>
+                </div>
+              ) : existingNonHoliday.totalNonHoliday > 0 || holidayServerWarning ? (
+                <>
+                  <p className="admin-confirm-message" style={{ color: '#b45309' }}>
+                    Attendance already exists for {existingNonHoliday.totalNonHoliday || holidayServerWarning?.existing_count || 'several'} employee{(existingNonHoliday.totalNonHoliday || holidayServerWarning?.existing_count) === 1 ? '' : 's'}.
+                  </p>
+                  <p style={{ fontSize: '0.875rem', color: '#64748b', marginTop: '0.25rem' }}>
+                    Changing the date to Holiday will replace their current attendance status.
+                  </p>
+                </>
+              ) : (
+                <p className="admin-confirm-message">
+                  Are you sure you want to mark {formatFullDate(selectedDate)} as a Holiday for all active employees?
+                </p>
+              )}
+
+              <div className="admin-att-read-box" style={{ width: '100%', marginTop: '0.75rem', textAlign: 'left' }}>
+                <div className="admin-att-detail-row">
+                  <span className="att-lbl">Date:</span>
+                  <span className="att-val font-semibold">{formatFullDate(selectedDate)}</span>
+                </div>
+                <div className="admin-att-detail-row">
+                  <span className="att-lbl">Employees affected:</span>
+                  <span className="att-val font-semibold text-primary">{dailySummary.totalEmployees}</span>
+                </div>
+                <div className="admin-att-detail-row">
+                  <span className="att-lbl">Attendance status:</span>
+                  <span className="att-val font-semibold" style={{ color: '#7c3aed' }}>HOLIDAY</span>
+                </div>
+
+                {/* If non-holiday records exist, show breakdown */}
+                {(existingNonHoliday.totalNonHoliday > 0 || (holidayServerWarning && holidayServerWarning.breakdown)) && (
+                  <>
+                    <div className="admin-att-detail-row" style={{ marginTop: '0.25rem', paddingTop: '0.25rem', borderTop: '1px dashed #cbd5e1' }}>
+                      <span className="att-lbl font-semibold text-amber">Existing Records to Replace:</span>
+                      <span className="att-val font-semibold text-amber">{existingNonHoliday.totalNonHoliday || holidayServerWarning?.existing_count}</span>
+                    </div>
+                    {existingNonHoliday.breakdown.map((item) => (
+                      <div key={item.status} className="admin-att-detail-row" style={{ paddingLeft: '0.75rem' }}>
+                        <span className="att-lbl">{item.status}:</span>
+                        <span className="att-val font-semibold">{item.count}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                <div className="admin-att-detail-row">
+                  <span className="att-lbl">Scope:</span>
+                  <span className="att-val text-muted text-xs">
+                    This action will mark the selected date as a Holiday for all active employees.
+                  </span>
+                </div>
+              </div>
+
+              {/* Optional Holiday Remark Input */}
+              <div className="admin-form-field" style={{ width: '100%', marginTop: '0.75rem', textAlign: 'left' }}>
+                <label htmlFor="modalHolidayRemarks" className="admin-field-label">
+                  Holiday Name / Remarks (Optional)
+                </label>
+                <input
+                  id="modalHolidayRemarks"
+                  type="text"
+                  className="admin-field-input"
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '0.375rem',
+                    fontSize: '0.875rem',
+                    boxSizing: 'border-box',
+                  }}
+                  placeholder='e.g. Dasara Holiday, Republic Day'
+                  value={holidayRemarks}
+                  onChange={(e) => setHolidayRemarks(e.target.value)}
+                  maxLength={500}
+                />
+              </div>
+            </div>
+
+            <div className="admin-modal-footer">
+              <button
+                type="button"
+                className="admin-btn admin-btn-secondary"
+                disabled={submitting}
+                onClick={handleCancelHolidayModal}
+              >
+                Cancel
+              </button>
+
+              {dailySummary.totalEmployees > 0 && dailySummary.holiday === dailySummary.totalEmployees ? (
+                <button
+                  type="button"
+                  className="admin-btn-primary admin-btn-holiday"
+                  disabled={submitting}
+                  onClick={() => handleConfirmMarkHoliday(false)}
+                >
+                  {submitting ? 'Confirming...' : 'Mark Holiday Anyway'}
+                </button>
+              ) : existingNonHoliday.totalNonHoliday > 0 || holidayServerWarning ? (
+                <button
+                  type="button"
+                  className="admin-btn-primary admin-btn-warning"
+                  disabled={submitting}
+                  onClick={() => handleConfirmMarkHoliday(true)}
+                >
+                  {submitting ? 'Marking...' : 'Mark Holiday & Replace'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="admin-btn-primary admin-btn-holiday"
+                  disabled={submitting}
+                  onClick={() => handleConfirmMarkHoliday(false)}
+                >
+                  {submitting ? 'Marking...' : 'Confirm Holiday'}
+                </button>
+              )}
             </div>
           </div>
         </div>

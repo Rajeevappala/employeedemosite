@@ -164,15 +164,15 @@ async function runSecuritySuite() {
     });
     assert(empAdminPayrollRes.statusCode === 403, 'Employee token accessing /api/admin/payroll returns 403');
 
-    // 2.3 Employee cannot access admin announcements create
-    const empAdminAnnounceRes = await makeRequest({
+    // 2.3 Employee cannot access admin employee creation
+    const empAdminCreateEmpRes = await makeRequest({
       hostname: 'localhost',
       port: PORT,
-      path: '/api/admin/announcements',
+      path: '/api/admin/employees',
       method: 'POST',
       headers: { Authorization: `Bearer ${empToken}`, 'Content-Type': 'application/json' },
-    }, { title: 'Hacked', content: 'Test' });
-    assert(empAdminAnnounceRes.statusCode === 403, 'Employee token POST /api/admin/announcements returns 403');
+    }, { first_name: 'Hacked' });
+    assert(empAdminCreateEmpRes.statusCode === 403, 'Employee token POST /api/admin/employees returns 403');
 
     // 2.4 Admin cannot access employee self-service endpoints where disallowed
     const adminEmpDashRes = await makeRequest({
@@ -339,10 +339,10 @@ async function runSecuritySuite() {
     const sqliUuidRes = await makeRequest({
       hostname: 'localhost',
       port: PORT,
-      path: `/api/admin/announcements/${encodeURIComponent("1' OR '1'='1")}`,
-      method: 'GET',
-      headers: { Authorization: `Bearer ${adminToken}` },
-    });
+      path: `/api/admin/exit/requests/${encodeURIComponent("1' OR '1'='1")}/review`,
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+    }, { action: 'APPROVE' });
     assert(sqliUuidRes.statusCode === 400, 'Malformed/injected UUID parameter returns 400 Bad Request');
 
     // 5.3 Invalid date format returns 400

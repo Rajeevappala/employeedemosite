@@ -48,6 +48,9 @@ function Login() {
     e.preventDefault();
     if (isSubmitting) return;
 
+    const clickTimestamp = new Date().toISOString();
+    console.log(`[OTP_DEBUG] [${clickTimestamp}] Send OTP button clicked.`);
+
     const trimmedEmail = email.trim();
 
     if (!trimmedEmail) {
@@ -77,6 +80,9 @@ function Login() {
     } catch (err) {
       const displayMsg =
         err.data?.message || err.message || 'Unable to send OTP. Please try again.';
+      console.error(
+        `[OTP_DEBUG] [${new Date().toISOString()}] Login UI caught OTP request error: "${displayMsg}" (Status: ${err.status ?? 'Network/Error'})`
+      );
       setErrorMessage(displayMsg);
     } finally {
       setIsSubmitting(false);
@@ -85,6 +91,9 @@ function Login() {
 
   const handleResendOtp = async () => {
     if (isSubmitting || resendCooldown > 0) return;
+
+    const clickTimestamp = new Date().toISOString();
+    console.log(`[OTP_DEBUG] [${clickTimestamp}] Send OTP button clicked (Resend OTP).`);
 
     setIsSubmitting(true);
     setErrorMessage('');
@@ -96,6 +105,9 @@ function Login() {
     } catch (err) {
       const displayMsg =
         err.data?.message || err.message || 'Failed to resend OTP. Please try again.';
+      console.error(
+        `[OTP_DEBUG] [${new Date().toISOString()}] Login UI caught resend OTP error: "${displayMsg}" (Status: ${err.status ?? 'Network/Error'})`
+      );
       setErrorMessage(displayMsg);
     } finally {
       setIsSubmitting(false);
@@ -148,7 +160,7 @@ function Login() {
       // 5. Navigate based on authenticated role
       if (user.role === 'EMPLOYEE') {
         navigate('/employee/dashboard', { replace: true });
-      } else if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') {
+      } else if (user.role === 'ADMIN') {
         navigate('/admin/dashboard', { replace: true });
       } else {
         navigate('/login', { replace: true });
@@ -264,6 +276,9 @@ function Login() {
               type="submit"
               className="login-submit-button"
               disabled={isSubmitting}
+              onClick={() => {
+                console.log(`[OTP_DEBUG] [${new Date().toISOString()}] Send OTP button clicked.`);
+              }}
             >
               {isSubmitting ? 'Sending OTP...' : 'Send OTP'}
             </button>

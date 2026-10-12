@@ -1,56 +1,14 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import api from '../../services/api';
 import './Navbar.css';
 
 function Navbar({ onToggleSidebar, isSidebarOpen }) {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const fetchUnread = async () => {
-      if (user?.role === 'EMPLOYEE') {
-        try {
-          const res = await api.employee.getUnreadAnnouncementsCount();
-          if (isMounted && res && res.success && typeof res.unread_count === 'number') {
-            setUnreadCount(res.unread_count);
-          }
-        } catch {
-          // Ignore error silently
-        }
-      }
-    };
-
-    fetchUnread();
-
-    const handleReadUpdate = () => {
-      fetchUnread();
-    };
-
-    window.addEventListener('announcements-read-updated', handleReadUpdate);
-    return () => {
-      isMounted = false;
-      window.removeEventListener('announcements-read-updated', handleReadUpdate);
-    };
-  }, [user]);
-
-  const handleNotificationClick = () => {
-    if (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') {
-      navigate('/admin/announcements');
-    } else {
-      navigate('/employee/announcements');
-    }
-  };
 
   const displayName = user
     ? [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email || 'Employee'
     : 'Employee';
 
-  const displayRole = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' ? 'Administrator' : 'Employee';
+  const displayRole = user?.role === 'ADMIN' ? 'Administrator' : 'Employee';
 
   return (
     <header className="portal-navbar">
@@ -109,36 +67,6 @@ function Navbar({ onToggleSidebar, isSidebarOpen }) {
       </div>
 
       <div className="navbar-right">
-        {/* Notification Icon */}
-        <button
-          type="button"
-          className="navbar-icon-btn"
-          onClick={handleNotificationClick}
-          aria-label={unreadCount > 0 ? `Announcements: ${unreadCount} unread` : 'Announcements'}
-          title={unreadCount > 0 ? `${unreadCount} unread announcements` : 'Announcements'}
-        >
-          <svg
-            className="navbar-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-          </svg>
-          {unreadCount > 0 ? (
-            <span className="notification-badge-count" aria-hidden="true">
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </span>
-          ) : (
-            <span className="notification-badge-dot" aria-hidden="true"></span>
-          )}
-        </button>
-
         {/* User Profile Section */}
         <div className="navbar-user-profile">
           <div className="navbar-avatar" aria-hidden="true">

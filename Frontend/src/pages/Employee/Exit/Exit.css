@@ -452,6 +452,42 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  transition: all 0.2s ease-in-out;
+}
+
+.tile-available {
+  border-color: #a7f3d0;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.05);
+}
+
+.tile-scheduled {
+  border-color: #e2e8f0;
+  background: #fbfcfe;
+}
+
+.tile-badge-row {
+  margin-bottom: 0.5rem;
+}
+
+.exit-doc-status-pill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.pill-available {
+  background-color: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.pill-scheduled {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
 }
 
 .download-tile-info h3 {
@@ -464,8 +500,92 @@
 .download-tile-info p {
   font-size: 0.8125rem;
   color: #64748b;
-  margin: 0 0 1rem 0;
+  margin: 0 0 0.5rem 0;
   line-height: 1.4;
+}
+
+.doc-tile-desc {
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.doc-remarks-small {
+  font-size: 0.75rem;
+  color: #475569;
+  font-style: italic;
+  margin-top: 0.25rem;
+}
+
+.download-tile-actions {
+  margin-top: 1rem;
+}
+
+.download-tile-actions .doc-btn-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.exit-btn-locked {
+  background-color: #f8fafc;
+  color: #64748b;
+  border: 1px dashed #cbd5e1;
+  cursor: not-allowed;
+  width: 100%;
+  text-align: center;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border-radius: 0.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+}
+
+.exit-btn-sm {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8125rem;
+  border-radius: 0.375rem;
+}
+
+.exit-btn-secondary {
+  background-color: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+}
+
+.exit-btn-secondary:hover:not(:disabled) {
+  background-color: #e2e8f0;
+}
+
+/* Empty Exit Docs State */
+.exit-empty-docs-box {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 0.5rem;
+  color: #64748b;
+}
+
+.empty-docs-icon {
+  font-size: 2.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.exit-empty-docs-box h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 0.5rem 0;
+}
+
+.exit-empty-docs-box p {
+  font-size: 0.875rem;
+  color: #64748b;
+  max-width: 520px;
+  margin: 0 auto;
+  line-height: 1.5;
 }
 
 /* Modal */
@@ -536,5 +656,27 @@
   .settlement-summary-box {
     flex-direction: column;
     gap: 0.75rem;
+  }
+
+  .download-tile-actions .doc-btn-group {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .exit-page-container {
+    padding: 0.75rem;
+  }
+
+  .exit-title {
+    font-size: 1.25rem;
+  }
+
+  .exit-card {
+    padding: 1rem;
+  }
+
+  .exit-download-grid {
+    grid-template-columns: 1fr;
   }
 }

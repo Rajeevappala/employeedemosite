@@ -13,7 +13,6 @@ import EmployeePFDetails from '../pages/Employee/PFDetails/PFDetails';
 import EmployeeLeaves from '../pages/Employee/Leaves/Leaves';
 import EmployeeAttendance from '../pages/Employee/Attendance/Attendance';
 import EmployeePayslips from '../pages/Employee/Payslips/Payslips';
-import EmployeeAnnouncements from '../pages/Employee/Announcements/Announcements';
 import EmployeeExit from '../pages/Employee/Exit/Exit';
 
 // Admin Layout & Pages
@@ -21,13 +20,19 @@ import AdminLayout from '../components/AdminLayout/AdminLayout';
 import AdminDashboard from '../pages/Admin/Dashboard/Dashboard';
 import AdminEmployees from '../pages/Admin/Employees/Employees';
 import AdminEmployeeDetails from '../pages/Admin/EmployeeDetails/EmployeeDetails';
+import AdminEmployeeEdit from '../pages/Admin/EmployeeEdit/EmployeeEdit';
 import AdminDocuments from '../pages/Admin/Documents/Documents';
 import AdminPFDetails from '../pages/Admin/PFDetails/PFDetails';
 import AdminLeaves from '../pages/Admin/Leaves/Leaves';
 import AdminAttendance from '../pages/Admin/Attendance/Attendance';
 import AdminPayroll from '../pages/Admin/Payroll/Payroll';
-import AdminAnnouncements from '../pages/Admin/Announcements/Announcements';
 import AdminExit from '../pages/Admin/Exit/Exit';
+import AdminSettings from '../pages/Admin/Settings/Settings';
+import AdminOrganizationSettings from '../pages/Admin/Settings/Organization/OrganizationSettings';
+import AdminWorkAttendanceSettings from '../pages/Admin/Settings/WorkAttendance/WorkAttendanceSettings';
+import AdminLeaveSettings from '../pages/Admin/Settings/Leave/LeaveSettings';
+import AdminHolidayCalendar from '../pages/Admin/Settings/HolidayCalendar/HolidayCalendar';
+import AdminEmployeeConfiguration from '../pages/Admin/Settings/EmployeeConfiguration/EmployeeConfiguration';
 
 function ProtectedRoute({ allowedRoles, children }) {
   const { user, loading, isAuthenticated } = useAuth();
@@ -138,7 +143,7 @@ function AppRoutes() {
           <Route path="attendance" element={<EmployeeAttendance />} />
           <Route path="leaves" element={<EmployeeLeaves />} />
           <Route path="payslips" element={<EmployeePayslips />} />
-          <Route path="announcements" element={<EmployeeAnnouncements />} />
+          <Route path="bank-details" element={<Navigate to="/employee/profile" replace />} />
           <Route path="exit" element={<EmployeeExit />} />
         </Route>
 
@@ -146,7 +151,7 @@ function AppRoutes() {
         <Route
           path="/admin"
           element={
-            <ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}>
+            <ProtectedRoute allowedRoles={['ADMIN']}>
               <AdminLayout />
             </ProtectedRoute>
           }
@@ -155,14 +160,20 @@ function AppRoutes() {
           <Route path="dashboard" element={<AdminDashboard />} />
           <Route path="employees" element={<AdminEmployees />} />
           <Route path="employees/:employeeId" element={<AdminEmployeeDetails />} />
+          <Route path="employees/:employeeId/edit" element={<AdminEmployeeEdit />} />
           <Route path="attendance" element={<AdminAttendance />} />
           <Route path="documents" element={<AdminDocuments />} />
           <Route path="pf" element={<AdminPFDetails />} />
           <Route path="leaves" element={<AdminLeaves />} />
           <Route path="payroll" element={<AdminPayroll />} />
           <Route path="payroll/monthly-payslips" element={<AdminPayroll defaultTab="monthly_payslips" />} />
-          <Route path="announcements" element={<AdminAnnouncements />} />
           <Route path="exit" element={<AdminExit />} />
+          <Route path="settings" element={<AdminSettings />} />
+          <Route path="settings/organization" element={<AdminOrganizationSettings />} />
+          <Route path="settings/work-attendance" element={<AdminWorkAttendanceSettings />} />
+          <Route path="settings/leave" element={<AdminLeaveSettings />} />
+          <Route path="settings/holidays" element={<AdminHolidayCalendar />} />
+          <Route path="settings/employees" element={<AdminEmployeeConfiguration />} />
         </Route>
 
         {/* Fallback route */}

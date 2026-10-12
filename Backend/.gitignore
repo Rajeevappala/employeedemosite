@@ -3,4 +3,10 @@ node_modules/
 .env.*
 !.env.example
 *.log
+storage/
 storage/private/
+uploads/
+*.pem
+*.key
+*.crt
+*.cer

@@ -1,5 +1,19 @@
 // Base URL for the Employee Portal Backend API
-const BASE_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) || 'http://localhost:5000/api';
+// In production, safely defaults to relative '/api' if VITE_API_URL is unset (ideal for reverse proxies).
+// In development, defaults to 'http://localhost:5000/api'.
+const getBaseUrl = () => {
+  const envUrl = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
+    return envUrl.trim().replace(/\/+$/, '');
+  }
+  const isProd = typeof import.meta !== 'undefined' && import.meta.env?.PROD;
+  if (isProd) {
+    return '/api';
+  }
+  return 'http://localhost:5000/api';
+};
+
+const BASE_URL = getBaseUrl();
 
 /**
  * Retrieves the JWT session token from localStorage.
@@ -87,11 +101,79 @@ const downloadFile = async (endpoint) => {
 
 const api = {
   auth: {
-    requestOtp: (email) =>
-      request('/auth/request-otp', {
-        method: 'POST',
-        body: JSON.stringify({ email: String(email).trim() }),
-      }),
+    requestOtp: async (email) => {
+      const endpoint = '/auth/request-otp';
+      const url = `${BASE_URL}${endpoint}`;
+      const method = 'POST';
+      const startTime = Date.now();
+      const startIso = new Date().toISOString();
+
+      console.log(`[OTP_DEBUG] [${startIso}] Request URL and HTTP method: ${method} ${url}`);
+      console.log(`[OTP_DEBUG] [${startIso}] Request started.`);
+
+      let response;
+      try {
+        response = await fetch(url, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email: String(email).trim() }),
+        });
+      } catch (networkErr) {
+        const elapsedMs = Date.now() - startTime;
+        const errIso = new Date().toISOString();
+        console.error(
+          `[OTP_DEBUG] [${errIso}] Request timeout or network failure: ${networkErr.message} (Elapsed: ${elapsedMs}ms)`
+        );
+        const err = new Error(networkErr.message || 'Network failure');
+        err.isNetworkError = true;
+        err.status = 0;
+        throw err;
+      }
+
+      const elapsedMs = Date.now() - startTime;
+      const statusIso = new Date().toISOString();
+      const status = response.status;
+      console.log(`[OTP_DEBUG] [${statusIso}] HTTP response status: ${status} (Elapsed: ${elapsedMs}ms)`);
+
+      let data = null;
+      let jsonParseError = false;
+      const rawText = await response.text().catch(() => '');
+
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch (parseErr) {
+        jsonParseError = true;
+        console.error(
+          `[OTP_DEBUG] [${new Date().toISOString()}] Unexpected response or JSON parsing failure: "${rawText ? rawText.slice(0, 150) : ''}" (Parser error: ${parseErr.message}) (Elapsed: ${elapsedMs}ms)`
+        );
+      }
+
+      // Sanitized response message
+      const sanitizedMessage =
+        data && typeof data.message === 'string'
+          ? data.message
+          : (jsonParseError ? 'Non-JSON response received' : (data ? 'No message field in response' : 'Empty response body'));
+
+      console.log(`[OTP_DEBUG] [${new Date().toISOString()}] Sanitized response message: "${sanitizedMessage}"`);
+
+      if (status === 429) {
+        console.warn(`[OTP_DEBUG] [${new Date().toISOString()}] Rate limit response (HTTP 429): "${sanitizedMessage}" (Elapsed: ${elapsedMs}ms)`);
+      } else if (status >= 500) {
+        console.error(`[OTP_DEBUG] [${new Date().toISOString()}] Server error (HTTP ${status}): "${sanitizedMessage}" (Elapsed: ${elapsedMs}ms)`);
+      }
+
+      if (!response.ok) {
+        const errorMessage = sanitizedMessage || `Request failed with status ${status}`;
+        const error = new Error(errorMessage);
+        error.status = status;
+        error.data = data;
+        throw error;
+      }
+
+      return data;
+    },
 
     verifyOtp: (email, otp) =>
       request('/auth/verify-otp', {
@@ -204,28 +286,6 @@ const api = {
       return request(`/employee/attendance${query}`, { method: 'GET' });
     },
 
-    // GET /api/employee/announcements
-    getAnnouncements: (params = {}) => {
-      const searchParams = new URLSearchParams();
-      if (params.page) searchParams.append('page', params.page);
-      if (params.limit) searchParams.append('limit', params.limit);
-      if (params.unread_only) searchParams.append('unread_only', 'true');
-      const qs = searchParams.toString();
-      return request(`/employee/announcements${qs ? `?${qs}` : ''}`, { method: 'GET' });
-    },
-
-    // GET /api/employee/announcements/unread-count
-    getUnreadAnnouncementsCount: () =>
-      request('/employee/announcements/unread-count', { method: 'GET' }),
-
-    // GET /api/employee/announcements/:announcementId
-    getAnnouncement: (announcementId) =>
-      request(`/employee/announcements/${announcementId}`, { method: 'GET' }),
-
-    // PATCH /api/employee/announcements/:announcementId/read
-    markAnnouncementAsRead: (announcementId) =>
-      request(`/employee/announcements/${announcementId}/read`, { method: 'PATCH' }),
-
     // Exit & Offboarding
     exit: {
       apply: (data) =>
@@ -238,8 +298,26 @@ const api = {
       downloadRelievingLetter: () => downloadFile('/employee/exit/relieving-letter'),
       downloadExperienceCertificate: () => downloadFile('/employee/exit/experience-certificate'),
       downloadFnfStatement: () => downloadFile('/employee/exit/fnf-statement'),
+      downloadDocument: (documentId) =>
+        downloadFile(`/employee/exit/documents/${encodeURIComponent(documentId)}/download`),
+      viewDocument: (documentId) =>
+        downloadFile(`/employee/exit/documents/${encodeURIComponent(documentId)}/view`),
     },
+
+    // Bank Details
+    getBankDetails: () => request('/employee/bank-details', { method: 'GET' }),
+    saveBankDetails: (data) =>
+      request('/employee/bank-details', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    updateBankDetails: (data) =>
+      request('/employee/bank-details', {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
   },
+
   admin: {
     // GET /api/admin/dashboard
     getDashboard: (params = {}) => {
@@ -289,7 +367,7 @@ const api = {
     updateEmployee: (employeeId, data) =>
       request(`/admin/employees/${encodeURIComponent(employeeId)}`, {
         method: 'PUT',
-        body: JSON.stringify(data),
+        body: (typeof FormData !== 'undefined' && data instanceof FormData) ? data : JSON.stringify(data),
       }),
 
     // PATCH /api/admin/employees/:employeeId/status (Phase 21 Status Toggle)
@@ -297,6 +375,29 @@ const api = {
       request(`/admin/employees/${encodeURIComponent(employeeId)}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status, remarks }),
+      }),
+
+    // Bank Details (Admin Review & Verification)
+    getEmployeeBankDetails: (employeeId) =>
+      request(`/admin/employees/${encodeURIComponent(employeeId)}/bank-details`, { method: 'GET' }),
+    verifyEmployeeBankDetails: (employeeId, data) =>
+      request(`/admin/employees/${encodeURIComponent(employeeId)}/bank-details/verify`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+
+    // PUT /api/admin/employees/:employeeId/classify-department
+    classifyEmployeeDepartment: (employeeId, department) =>
+      request(`/admin/employees/${encodeURIComponent(employeeId)}/classify-department`, {
+        method: 'PUT',
+        body: JSON.stringify({ department }),
+      }),
+
+    // POST /api/admin/employees/classify-departments
+    bulkClassifyDepartments: (classifications) =>
+      request('/admin/employees/classify-departments', {
+        method: 'POST',
+        body: JSON.stringify({ classifications }),
       }),
 
     // DELETE /api/admin/employees/:employeeId (Phase 21+ Permanent Deletion)
@@ -327,6 +428,24 @@ const api = {
       request(`/admin/users/${encodeURIComponent(userId)}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status }),
+      }),
+
+    // GET /api/admin/users/:userId (Retrieve Admin User Details)
+    getUser: (userId) =>
+      request(`/admin/users/${encodeURIComponent(userId)}`, { method: 'GET' }),
+
+    // PUT /api/admin/users/:userId (Update Admin Details & Assign/Edit Admin ID)
+    updateUser: (userId, data) =>
+      request(`/admin/users/${encodeURIComponent(userId)}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+
+    // DELETE /api/admin/users/:userId (Permanent Admin Deletion)
+    deleteUserPermanently: (userId, confirmation) =>
+      request(`/admin/users/${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+        body: JSON.stringify(confirmation),
       }),
 
     // GET /api/admin/documents
@@ -424,6 +543,13 @@ const api = {
         body: JSON.stringify(data),
       }),
 
+    // POST /api/admin/attendance/mark-holiday
+    markHoliday: (data) =>
+      request('/admin/attendance/mark-holiday', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
     // PUT /api/admin/attendance/:attendanceId
     updateAttendance: (attendanceId, data) =>
       request(`/admin/attendance/${encodeURIComponent(attendanceId)}`, {
@@ -460,6 +586,31 @@ const api = {
       }
       const qs = searchParams.toString();
       return request(`/admin/leaves${qs ? `?${qs}` : ''}`, { method: 'GET' });
+    },
+
+    // GET /api/admin/leaves/export
+    exportLeaves: (params = {}) => {
+      const searchParams = new URLSearchParams();
+      if (params.search && params.search.trim()) {
+        searchParams.append('search', params.search.trim());
+      }
+      if (params.status && params.status !== 'All') {
+        searchParams.append('status', params.status);
+      }
+      if (params.leave_type && params.leave_type !== 'All') {
+        searchParams.append('leave_type', params.leave_type);
+      }
+      if (params.department && params.department !== 'All') {
+        searchParams.append('department', params.department);
+      }
+      if (params.employee_id && params.employee_id !== 'All') {
+        searchParams.append('employee_id', params.employee_id);
+      }
+      if (params.month && params.month !== 'All') {
+        searchParams.append('month', params.month);
+      }
+      const qs = searchParams.toString();
+      return downloadFile(`/admin/leaves/export${qs ? `?${qs}` : ''}`);
     },
 
     // GET /api/admin/leaves/balances
@@ -656,55 +807,6 @@ const api = {
         body: formData,
       }),
 
-    // GET /api/admin/announcements
-    getAnnouncements: (params = {}) => {
-      const searchParams = new URLSearchParams();
-      if (params.page) searchParams.append('page', params.page);
-      if (params.limit) searchParams.append('limit', params.limit);
-      if (params.search && params.search.trim()) searchParams.append('search', params.search.trim());
-      if (params.status && params.status !== 'All') searchParams.append('status', params.status);
-      if (params.priority && params.priority !== 'All') searchParams.append('priority', params.priority);
-      if (params.target_type && params.target_type !== 'All') searchParams.append('target_type', params.target_type);
-      const qs = searchParams.toString();
-      return request(`/admin/announcements${qs ? `?${qs}` : ''}`, { method: 'GET' });
-    },
-
-    // GET /api/admin/announcements/:announcementId
-    getAnnouncement: (announcementId) =>
-      request(`/admin/announcements/${announcementId}`, { method: 'GET' }),
-
-    // POST /api/admin/announcements
-    createAnnouncement: (data) =>
-      request('/admin/announcements', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
-
-    // PUT /api/admin/announcements/:announcementId
-    updateAnnouncement: (announcementId, data) =>
-      request(`/admin/announcements/${announcementId}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-      }),
-
-    // PATCH /api/admin/announcements/:announcementId/publish
-    publishAnnouncement: (announcementId) =>
-      request(`/admin/announcements/${announcementId}/publish`, {
-        method: 'PATCH',
-      }),
-
-    // PATCH /api/admin/announcements/:announcementId/archive
-    archiveAnnouncement: (announcementId) =>
-      request(`/admin/announcements/${announcementId}/archive`, {
-        method: 'PATCH',
-      }),
-
-    // DELETE /api/admin/announcements/:announcementId
-    deleteAnnouncement: (announcementId) =>
-      request(`/admin/announcements/${announcementId}`, {
-        method: 'DELETE',
-      }),
-
     // Exit & Offboarding
     exit: {
       getRequests: (params = {}) => {
@@ -737,12 +839,172 @@ const api = {
           method: 'POST',
           body: JSON.stringify(data),
         }),
+      getDocuments: (id) =>
+        request(`/admin/exit/${encodeURIComponent(id)}/documents`, { method: 'GET' }),
+      uploadDocument: (id, formData) =>
+        request(`/admin/exit/${encodeURIComponent(id)}/documents`, {
+          method: 'POST',
+          body: formData,
+        }),
+      updateReleaseDate: (documentId, releaseDate) =>
+        request(`/admin/exit/documents/${encodeURIComponent(documentId)}/release-date`, {
+          method: 'PATCH',
+          body: JSON.stringify({ release_date: releaseDate }),
+        }),
+      downloadDocument: (documentId) =>
+        downloadFile(`/admin/exit/documents/${encodeURIComponent(documentId)}/download`),
+      viewDocument: (documentId) =>
+        downloadFile(`/admin/exit/documents/${encodeURIComponent(documentId)}/view`),
       downloadRelievingLetter: (id) =>
         downloadFile(`/admin/exit/${encodeURIComponent(id)}/relieving-letter`),
       downloadExperienceCertificate: (id) =>
         downloadFile(`/admin/exit/${encodeURIComponent(id)}/experience-certificate`),
       downloadFnfStatement: (id) =>
         downloadFile(`/admin/exit/${encodeURIComponent(id)}/fnf-statement`),
+    },
+    settings: {
+      organization: {
+        get: () => request('/admin/settings/organization', { method: 'GET' }),
+        update: (data) =>
+          request('/admin/settings/organization', {
+            method: 'PUT',
+            body: JSON.stringify(data),
+          }),
+      },
+      workAttendance: {
+        get: () => request('/admin/settings/work-attendance', { method: 'GET' }),
+        update: (data) =>
+          request('/admin/settings/work-attendance', {
+            method: 'PUT',
+            body: JSON.stringify(data),
+          }),
+      },
+      leave: {
+        get: () => request('/admin/settings/leave', { method: 'GET' }),
+        update: (data) =>
+          request('/admin/settings/leave', {
+            method: 'PUT',
+            body: JSON.stringify(data),
+          }),
+      },
+      holidays: {
+        get: (params = {}) => {
+          const searchParams = new URLSearchParams();
+          if (params.year) searchParams.append('year', params.year);
+          if (params.status) searchParams.append('status', params.status);
+          const qs = searchParams.toString();
+          return request(`/admin/settings/holidays${qs ? `?${qs}` : ''}`, { method: 'GET' });
+        },
+        create: (data) =>
+          request('/admin/settings/holidays', {
+            method: 'POST',
+            body: JSON.stringify(data),
+          }),
+        update: (id, data) =>
+          request(`/admin/settings/holidays/${encodeURIComponent(id)}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+          }),
+        delete: (id) =>
+          request(`/admin/settings/holidays/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+          }),
+      },
+      employees: {
+        get: () => request('/admin/settings/employees', { method: 'GET' }),
+        departments: {
+          get: (params = {}) => {
+            const searchParams = new URLSearchParams();
+            if (params.active !== undefined) searchParams.append('active', params.active);
+            if (params.search) searchParams.append('search', params.search);
+            const qs = searchParams.toString();
+            return request(`/admin/settings/employees/departments${qs ? `?${qs}` : ''}`, { method: 'GET' });
+          },
+          create: (data) =>
+            request('/admin/settings/employees/departments', {
+              method: 'POST',
+              body: JSON.stringify(data),
+            }),
+          update: (id, data) =>
+            request(`/admin/settings/employees/departments/${encodeURIComponent(id)}`, {
+              method: 'PUT',
+              body: JSON.stringify(data),
+            }),
+          delete: (id) =>
+            request(`/admin/settings/employees/departments/${encodeURIComponent(id)}`, {
+              method: 'DELETE',
+            }),
+        },
+        designations: {
+          get: (params = {}) => {
+            const searchParams = new URLSearchParams();
+            if (params.active !== undefined) searchParams.append('active', params.active);
+            if (params.search) searchParams.append('search', params.search);
+            const qs = searchParams.toString();
+            return request(`/admin/settings/employees/designations${qs ? `?${qs}` : ''}`, { method: 'GET' });
+          },
+          create: (data) =>
+            request('/admin/settings/employees/designations', {
+              method: 'POST',
+              body: JSON.stringify(data),
+            }),
+          update: (id, data) =>
+            request(`/admin/settings/employees/designations/${encodeURIComponent(id)}`, {
+              method: 'PUT',
+              body: JSON.stringify(data),
+            }),
+          delete: (id) =>
+            request(`/admin/settings/employees/designations/${encodeURIComponent(id)}`, {
+              method: 'DELETE',
+            }),
+        },
+        employmentTypes: {
+          get: (params = {}) => {
+            const searchParams = new URLSearchParams();
+            if (params.active !== undefined) searchParams.append('active', params.active);
+            if (params.search) searchParams.append('search', params.search);
+            const qs = searchParams.toString();
+            return request(`/admin/settings/employees/employment-types${qs ? `?${qs}` : ''}`, { method: 'GET' });
+          },
+          create: (data) =>
+            request('/admin/settings/employees/employment-types', {
+              method: 'POST',
+              body: JSON.stringify(data),
+            }),
+          update: (id, data) =>
+            request(`/admin/settings/employees/employment-types/${encodeURIComponent(id)}`, {
+              method: 'PUT',
+              body: JSON.stringify(data),
+            }),
+          delete: (id) =>
+            request(`/admin/settings/employees/employment-types/${encodeURIComponent(id)}`, {
+              method: 'DELETE',
+            }),
+        },
+        locations: {
+          get: (params = {}) => {
+            const searchParams = new URLSearchParams();
+            if (params.active !== undefined) searchParams.append('active', params.active);
+            if (params.search) searchParams.append('search', params.search);
+            const qs = searchParams.toString();
+            return request(`/admin/settings/employees/locations${qs ? `?${qs}` : ''}`, { method: 'GET' });
+          },
+          create: (data) =>
+            request('/admin/settings/employees/locations', {
+              method: 'POST',
+              body: JSON.stringify(data),
+            }),
+          update: (id, data) =>
+            request(`/admin/settings/employees/locations/${encodeURIComponent(id)}`, {
+              method: 'PUT',
+              body: JSON.stringify(data),
+            }),
+          delete: (id) =>
+            request(`/admin/settings/employees/locations/${encodeURIComponent(id)}`, {
+              method: 'DELETE',
+            }),
+        },
+      },
     },
   },
 };

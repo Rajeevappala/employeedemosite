@@ -286,9 +286,6 @@ function Dashboard() {
   const [previewDoc, setPreviewDoc] = useState(null);
   const [downloadingId, setDownloadingId] = useState(null);
 
-  // Announcement detail modal and list state
-  const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
-  const [announcementsList, setAnnouncementsList] = useState([]);
 
   // Derive date string and hour once on mount to preserve purity
   const [currentDateInfo] = useState(() => {
@@ -314,7 +311,6 @@ function Dashboard() {
         if (!ignore) {
           if (res && res.success && res.data) {
             setDashboardData(res.data);
-            setAnnouncementsList(res.data.latest_announcements || []);
             setError(null);
           } else {
             setError(res?.message || 'Unable to retrieve dashboard metrics.');
@@ -346,7 +342,6 @@ function Dashboard() {
       const res = await api.employee.getDashboard();
       if (res && res.success && res.data) {
         setDashboardData(res.data);
-        setAnnouncementsList(res.data.latest_announcements || []);
       } else {
         setError(res?.message || 'Unable to retrieve dashboard metrics.');
       }
@@ -354,22 +349,6 @@ function Dashboard() {
       setError(err?.message || 'Failed to load employee dashboard. Please try again.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Handle announcement click: open detail modal & mark as read if unread
-  const handleAnnouncementClick = async (ann) => {
-    setSelectedAnnouncement(ann);
-    if (!ann.is_read) {
-      try {
-        await api.employee.markAnnouncementAsRead(ann.id);
-        setAnnouncementsList((prev) =>
-          prev.map((item) => (item.id === ann.id ? { ...item, is_read: true } : item))
-        );
-        window.dispatchEvent(new CustomEvent('announcements-read-updated'));
-      } catch {
-        // Ignore read marking failure silently
-      }
     }
   };
 
@@ -467,7 +446,11 @@ function Dashboard() {
     latest_payslip: latestPayslip = null,
     recent_documents = [],
     pf_summary = null,
+    birthday_employees: birthdayEmployees = [],
+    birthday_month_name: birthdayMonthName = '',
   } = dashboardData;
+
+  const todayBirthdays = birthdayEmployees.filter((b) => b.is_today);
 
   const greeting = getGreeting(currentDateInfo.hour, profile.first_name);
 
@@ -623,89 +606,6 @@ function Dashboard() {
         </div>
       </section>
 
-      {/* Latest Announcements Section */}
-      <section className="dashboard-section-card" aria-labelledby="latest-announcements-heading">
-        <div className="dashboard-card-header">
-          <div className="card-header-titles">
-            <h2 id="latest-announcements-heading" className="dashboard-card-title">
-              Latest Announcements
-            </h2>
-            <p className="dashboard-card-subtitle">Official company notices, updates, and communications</p>
-          </div>
-          <Link to="/employee/announcements" className="view-all-link">
-            View all announcements &rarr;
-          </Link>
-        </div>
-
-        {announcementsList && announcementsList.length > 0 ? (
-          <div className="dashboard-announcements-list">
-            {announcementsList.map((ann) => {
-              const priorityClass = (ann.priority || 'Normal').toLowerCase();
-              return (
-                <div
-                  key={ann.id}
-                  className={`dashboard-ann-item ${!ann.is_read ? 'ann-item-unread' : ''}`}
-                  onClick={() => handleAnnouncementClick(ann)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      handleAnnouncementClick(ann);
-                    }
-                  }}
-                  aria-label={`Announcement: ${ann.title}`}
-                >
-                  <div className="dashboard-ann-top">
-                    <div className="dashboard-ann-badges">
-                      <span className={`priority-badge priority-badge-${priorityClass}`}>
-                        {ann.priority} Priority
-                      </span>
-                      {!ann.is_read ? (
-                        <span className="dashboard-ann-unread-pill">
-                          <span className="status-badge-dot" aria-hidden="true"></span>
-                          Unread
-                        </span>
-                      ) : (
-                        <span className="dashboard-ann-read-pill">Read</span>
-                      )}
-                    </div>
-                    <span className="dashboard-ann-date">
-                      {formatDate(ann.publish_at || ann.created_at)}
-                    </span>
-                  </div>
-
-                  <h3 className="dashboard-ann-title">{ann.title}</h3>
-                  <p className="dashboard-ann-snippet">{ann.content}</p>
-
-                  <div className="dashboard-ann-footer">
-                    <span className="dashboard-ann-action-hint">
-                      Read full announcement
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <line x1="5" y1="12" x2="19" y2="12" />
-                        <polyline points="12 5 19 12 12 19" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="dashboard-empty-card">
-            <div className="dashboard-empty-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-              </svg>
-            </div>
-            <h3 className="dashboard-empty-title">No New Announcements</h3>
-            <p className="dashboard-empty-desc">
-              You are all caught up! No recent company announcements to display at this time.
-            </p>
-          </div>
-        )}
-      </section>
 
       {/* Two-Column Grid: Latest Payslip & PF Summary */}
       <div className="dashboard-columns-grid">
@@ -996,6 +896,74 @@ function Dashboard() {
         </section>
       </div>
 
+      {/* Employee Birthdays Section */}
+      <section className="dashboard-section-card birthday-section-card" aria-labelledby="birthday-section-heading">
+        <div className="dashboard-card-header">
+          <div className="card-header-titles">
+            <h2 id="birthday-section-heading" className="dashboard-card-title">
+              🎂 Birthdays This Month {birthdayMonthName ? `· ${birthdayMonthName}` : ''}
+            </h2>
+            <p className="dashboard-card-subtitle">
+              Celebrating team members born in {birthdayMonthName || 'this month'}
+            </p>
+          </div>
+        </div>
+
+        {todayBirthdays.length > 0 && (
+          <div className="birthday-today-highlight-banner" role="status" aria-label="Today's Birthday">
+            <div className="birthday-today-sparkle" aria-hidden="true">🎉</div>
+            <div className="birthday-today-info">
+              {todayBirthdays.map((b, idx) => (
+                <div key={idx} className="birthday-today-item">
+                  <h3 className="birthday-today-greeting">
+                    Happy Birthday, {b.employee_name}!
+                  </h3>
+                  <p className="birthday-today-sub">
+                    Today · {b.designation || 'Team Member'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {birthdayEmployees.length === 0 ? (
+          <div className="birthday-empty-state">
+            <div className="birthday-empty-icon" aria-hidden="true">
+              🎂
+            </div>
+            <h3 className="birthday-empty-title">No employee birthdays this month.</h3>
+            <p className="birthday-empty-desc">
+              There are no team birthdays scheduled for {birthdayMonthName || 'this month'}.
+            </p>
+          </div>
+        ) : (
+          <div className="birthday-cards-grid">
+            {birthdayEmployees.map((b, idx) => (
+              <div
+                key={idx}
+                className={`birthday-card ${b.is_today ? 'birthday-card-active-today' : ''}`}
+              >
+                <div className="birthday-card-badge" aria-label={`Birthday: ${b.birthday_label}`}>
+                  <span className="birthday-card-day">{String(b.birthday_day).padStart(2, '0')}</span>
+                  <span className="birthday-card-month">{birthdayMonthName ? birthdayMonthName.slice(0, 3).toUpperCase() : 'BDAY'}</span>
+                </div>
+                <div className="birthday-card-details">
+                  <div className="birthday-card-name-row">
+                    <h3 className="birthday-card-name">{b.employee_name}</h3>
+                    {b.is_today && (
+                      <span className="birthday-badge-today">🎉 Today!</span>
+                    )}
+                  </div>
+                  <p className="birthday-card-designation">{b.designation || 'Team Member'}</p>
+                  <span className="birthday-card-label-full">{b.birthday_label}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       {/* Two-Column Grid: Recent Documents & Quick Access */}
       <div className="dashboard-columns-grid">
         {/* Recent Documents Section */}
@@ -1128,66 +1096,6 @@ function Dashboard() {
         />
       )}
 
-      {/* Announcement Detail Modal */}
-      {selectedAnnouncement && (
-        <div
-          className="dashboard-modal-backdrop"
-          onClick={() => setSelectedAnnouncement(null)}
-          role="presentation"
-        >
-          <div
-            className="dashboard-modal-window dashboard-ann-modal"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="dashboard-ann-modal-title"
-          >
-            <div className="dashboard-modal-header">
-              <div className="dashboard-ann-modal-badges">
-                <span className={`priority-badge priority-badge-${(selectedAnnouncement.priority || 'Normal').toLowerCase()}`}>
-                  {selectedAnnouncement.priority} Priority
-                </span>
-                <span className="dashboard-ann-modal-date">
-                  {formatDate(selectedAnnouncement.publish_at || selectedAnnouncement.created_at)}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="dashboard-modal-close"
-                onClick={() => setSelectedAnnouncement(null)}
-                aria-label="Close modal"
-              >
-                &times;
-              </button>
-            </div>
-
-            <div className="dashboard-ann-modal-body">
-              <h2 id="dashboard-ann-modal-title" className="dashboard-ann-modal-heading">
-                {selectedAnnouncement.title}
-              </h2>
-              <div className="dashboard-ann-modal-text">
-                {selectedAnnouncement.content}
-              </div>
-            </div>
-
-            <div className="dashboard-modal-footer dashboard-ann-modal-footer">
-              <span className="dashboard-ann-modal-read-tag">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                Marked as read
-              </span>
-              <button
-                type="button"
-                className="dashboard-modal-btn"
-                onClick={() => setSelectedAnnouncement(null)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

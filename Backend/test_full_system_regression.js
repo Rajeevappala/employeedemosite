@@ -414,227 +414,42 @@ async function runRegression() {
       !empDashStr.includes('storage_key') && !empDashStr.includes('password_hash'),
       'Employee Dashboard does not leak storage_key or password_hash'
     );
-
     // ========================================================
-    // 17. PHASE 17 — NOTIFICATIONS & ANNOUNCEMENTS
+    // 17. NOTIFICATIONS & ANNOUNCEMENTS DECOMMISSIONING
     // ========================================================
-    console.log('\n--- 17. Phase 17 — Notifications & Announcements ---');
+    console.log('\n--- 17. Feature Decommissioning — Notifications & Announcements ---');
 
-    // 17.1 Admin Announcements List
-    const resAdminAnnList = await makeRequest({
+    // 17.1 Admin Announcements endpoints are decommissioned (404)
+    const resAdminAnn = await makeRequest({
       hostname: 'localhost',
       port: PORT,
       path: '/api/admin/announcements',
       method: 'GET',
       headers: { Authorization: `Bearer ${adminToken}` },
     });
-    assert(resAdminAnnList.statusCode === 200, 'Admin can list announcements (200)');
-    const adminAnnData = resAdminAnnList.json()?.data;
-    assert(Array.isArray(adminAnnData?.announcements), 'Admin announcements list contains announcements array');
-    assert(adminAnnData?.summary !== undefined, 'Admin announcements list contains summary metrics');
-    assert(adminAnnData?.pagination !== undefined, 'Admin announcements list contains pagination metadata');
+    assert(resAdminAnn.statusCode === 404, 'Admin announcements endpoint is cleanly decommissioned (404)');
 
-    // 17.2 Admin Announcements Creation
-    const resCreateAnn = await makeRequest(
-      {
-        hostname: 'localhost',
-        port: PORT,
-        path: '/api/admin/announcements',
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${adminToken}`,
-          'Content-Type': 'application/json',
-        },
-      },
-      {
-        title: 'Regression Test Notice',
-        content: 'This is a temporary regression announcement for testing lifecycle.',
-        priority: 'High',
-        target_type: 'ALL',
-        status: 'DRAFT',
-      }
-    );
-    assert(resCreateAnn.statusCode === 201, 'Admin can create announcement (201)');
-    const createdAnn = resCreateAnn.json()?.data;
-    const testAnnId = createdAnn?.id;
-    assert(Boolean(testAnnId), 'Created announcement returns valid ID');
-
-    // 17.3 Admin Announcements Get by ID
-    const resGetAnn = await makeRequest({
-      hostname: 'localhost',
-      port: PORT,
-      path: `/api/admin/announcements/${testAnnId}`,
-      method: 'GET',
-      headers: { Authorization: `Bearer ${adminToken}` },
-    });
-    assert(resGetAnn.statusCode === 200, 'Admin can fetch announcement by ID (200)');
-    assert(resGetAnn.json()?.data?.title === 'Regression Test Notice', 'Fetched announcement matches created title');
-
-    // 17.4 Admin Announcements Update
-    const resUpdateAnn = await makeRequest(
-      {
-        hostname: 'localhost',
-        port: PORT,
-        path: `/api/admin/announcements/${testAnnId}`,
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${adminToken}`,
-          'Content-Type': 'application/json',
-        },
-      },
-      {
-        title: 'Regression Test Notice (Updated)',
-        content: 'Updated content for regression testing.',
-        priority: 'Urgent',
-        target_type: 'ALL',
-      }
-    );
-    assert(resUpdateAnn.statusCode === 200, 'Admin can update announcement (200)');
-    assert(resUpdateAnn.json()?.data?.priority === 'Urgent', 'Updated announcement has updated priority');
-
-    // 17.5 Admin Announcements Publish
-    const resPublishAnn = await makeRequest({
-      hostname: 'localhost',
-      port: PORT,
-      path: `/api/admin/announcements/${testAnnId}/publish`,
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${adminToken}` },
-    });
-    assert(resPublishAnn.statusCode === 200, 'Admin can publish announcement (200)');
-    assert(resPublishAnn.json()?.data?.status === 'PUBLISHED', 'Published announcement has status=PUBLISHED');
-
-    // 17.6 Admin Announcements Archive
-    const resArchiveAnn = await makeRequest({
-      hostname: 'localhost',
-      port: PORT,
-      path: `/api/admin/announcements/${testAnnId}/archive`,
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${adminToken}` },
-    });
-    assert(resArchiveAnn.statusCode === 200, 'Admin can archive announcement (200)');
-    assert(resArchiveAnn.json()?.data?.status === 'ARCHIVED', 'Archived announcement has status=ARCHIVED');
-
-    // 17.7 Admin Announcements Delete
-    const resDeleteAnn = await makeRequest({
-      hostname: 'localhost',
-      port: PORT,
-      path: `/api/admin/announcements/${testAnnId}`,
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${adminToken}` },
-    });
-    assert(resDeleteAnn.statusCode === 200, 'Admin can delete announcement (200)');
-
-    // 17.8 Employee RBAC: Employee cannot access Admin Announcements
-    const resEmpAccessAdminAnn = await makeRequest({
-      hostname: 'localhost',
-      port: PORT,
-      path: '/api/admin/announcements',
-      method: 'GET',
-      headers: { Authorization: `Bearer ${empToken}` },
-    });
-    assert(resEmpAccessAdminAnn.statusCode === 403, 'Employee access to Admin Announcements returns 403 Forbidden');
-
-    // 17.9 Admin RBAC: Admin cannot access Employee Announcements
-    const resAdminAccessEmpAnn = await makeRequest({
-      hostname: 'localhost',
-      port: PORT,
-      path: '/api/employee/announcements',
-      method: 'GET',
-      headers: { Authorization: `Bearer ${adminToken}` },
-    });
-    assert(resAdminAccessEmpAnn.statusCode === 403, 'Admin access to Employee Announcements returns 403 Forbidden');
-
-    // 17.10 Employee Announcements List
-    const resEmpAnnList = await makeRequest({
+    // 17.2 Employee Announcements endpoints are decommissioned (404)
+    const resEmpAnn = await makeRequest({
       hostname: 'localhost',
       port: PORT,
       path: '/api/employee/announcements',
       method: 'GET',
       headers: { Authorization: `Bearer ${empToken}` },
     });
-    assert(resEmpAnnList.statusCode === 200, 'Employee can list visible announcements (200)');
-    const empAnnData = resEmpAnnList.json()?.data;
-    assert(Array.isArray(empAnnData?.announcements), 'Employee announcements contains array');
-    assert(typeof empAnnData?.unread_count === 'number', 'Employee announcements response includes unread_count');
+    assert(resEmpAnn.statusCode === 404, 'Employee announcements endpoint is cleanly decommissioned (404)');
 
-    // 17.11 Employee Announcements Unread Count endpoint
-    const resEmpUnreadCount = await makeRequest({
-      hostname: 'localhost',
-      port: PORT,
-      path: '/api/employee/announcements/unread-count',
-      method: 'GET',
-      headers: { Authorization: `Bearer ${empToken}` },
-    });
-    assert(resEmpUnreadCount.statusCode === 200, 'Employee can get unread count via /unread-count (200)');
-    assert(typeof resEmpUnreadCount.json()?.unread_count === 'number', 'Unread count is a numeric value');
-
-    // 17.12 Employee Targeting Security: Employee in Engineering cannot see Marketing announcements
-    const mktAnnRes = await pool.query(
-      `INSERT INTO public.announcements (
-         title, content, priority, target_type, target_department, status, publish_at, created_by
-       ) VALUES (
-         'Marketing Only Campaign', 'Campaign strategy notice for marketing.', 'Normal', 'DEPARTMENT', 'Marketing', 'PUBLISHED', NOW(), $1
-       ) RETURNING id`,
-      [adminUser.id]
-    );
-    const mktAnnId = mktAnnRes.rows[0].id;
-
-    const resEmpListAfterMkt = await makeRequest({
-      hostname: 'localhost',
-      port: PORT,
-      path: '/api/employee/announcements',
-      method: 'GET',
-      headers: { Authorization: `Bearer ${empToken}` },
-    });
-    const foundMktInList = resEmpListAfterMkt.json()?.data?.announcements?.some((a) => a.id === mktAnnId);
-    assert(!foundMktInList, 'Employee in Engineering does NOT see Marketing-targeted announcement');
-
-    // 17.13 Employee Detail Security: Probing unauthorized announcement returns 404
-    const resEmpGetMktDetail = await makeRequest({
-      hostname: 'localhost',
-      port: PORT,
-      path: `/api/employee/announcements/${mktAnnId}`,
-      method: 'GET',
-      headers: { Authorization: `Bearer ${empToken}` },
-    });
-    assert(resEmpGetMktDetail.statusCode === 404, 'Employee probing unauthorized department announcement returns 404 (not 403)');
-
-    // Clean up test marketing announcement
-    await pool.query(`DELETE FROM public.announcements WHERE id = $1`, [mktAnnId]);
-
-    // 17.14 Employee Announcements Mark Read & Idempotency
-    if (empAnnData?.announcements?.length > 0) {
-      const targetAnn = empAnnData.announcements[0];
-      const resMarkRead = await makeRequest({
-        hostname: 'localhost',
-        port: PORT,
-        path: `/api/employee/announcements/${targetAnn.id}/read`,
-        method: 'POST',
-        headers: { Authorization: `Bearer ${empToken}` },
-      });
-      assert(resMarkRead.statusCode === 200, 'Employee can mark announcement as read (200)');
-      assert(resMarkRead.json()?.is_read === true, 'Response confirms is_read=true');
-
-      // Idempotent call
-      const resMarkReadAgain = await makeRequest({
-        hostname: 'localhost',
-        port: PORT,
-        path: `/api/employee/announcements/${targetAnn.id}/read`,
-        method: 'POST',
-        headers: { Authorization: `Bearer ${empToken}` },
-      });
-      assert(resMarkReadAgain.statusCode === 200, 'Mark as read is idempotent (second call returns 200)');
-    }
-
-    // 17.15 Employee Dashboard Integration with Phase 17
+    // 17.3 Employee Dashboard data excludes announcements
     assert(
-      Array.isArray(empDashData?.latest_announcements),
-      'Employee Dashboard includes latest_announcements array'
+      empDashData?.latest_announcements === undefined,
+      'Employee Dashboard data excludes latest_announcements'
     );
     assert(
-      typeof empDashData?.unread_announcements_count === 'number',
-      'Employee Dashboard includes unread_announcements_count'
+      empDashData?.unread_announcements_count === undefined,
+      'Employee Dashboard data excludes unread_announcements_count'
     );
+
+
 
     console.log(`\n========================================================`);
     console.log(`REGRESSION SUMMARY: ${passed} passed, ${failed} failed`);

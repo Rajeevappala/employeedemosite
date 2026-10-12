@@ -63,9 +63,20 @@ const verifyOtpHash = (candidateOtp, storedHash) => {
  * Follows generic response patterns to prevent account enumeration.
  *
  * @param {string} rawEmail - Email address submitted by user.
+ * @param {Object} [options={}] - Optional request options.
+ * @param {boolean} [options.isTestMode=false] - Non-production test isolation flag.
  * @returns {Promise<{ success: boolean, message: string }>}
  */
-const requestOtp = async (rawEmail) => {
+const maskEmail = (em) => {
+  if (!em || typeof em !== 'string') return '';
+  const trimmed = em.trim();
+  const [local, dom] = trimmed.split('@');
+  if (!dom) return '***';
+  const maskedLocal = local.length <= 2 ? local[0] + '***' : local[0] + '***' + local[local.length - 1];
+  return `${maskedLocal}@${dom}`;
+};
+
+const requestOtp = async (rawEmail, options = {}) => {
   if (!isValidEmail(rawEmail)) {
     const error = new Error('A valid email address is required.');
     error.statusCode = 400;
@@ -73,6 +84,8 @@ const requestOtp = async (rawEmail) => {
   }
 
   const email = rawEmail.trim().toLowerCase();
+  const isProd = process.env.NODE_ENV === 'production';
+  const displayEmail = isProd ? maskEmail(email) : email;
 
   // 1. Rate Limiting: Check cooldown (60 seconds)
   const cooldownCheck = await pool.query(
@@ -83,6 +96,7 @@ const requestOtp = async (rawEmail) => {
   );
 
   if (cooldownCheck.rows.length > 0) {
+    console.warn(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Rate-limit rejection: 60-second cooldown active for ${displayEmail}`);
     const error = new Error(
       `Please wait at least ${RATE_LIMIT_COOLDOWN_SECONDS} seconds before requesting another OTP.`
     );
@@ -98,6 +112,7 @@ const requestOtp = async (rawEmail) => {
   );
 
   if (windowCheck.rows[0]?.count >= RATE_LIMIT_MAX_PER_WINDOW) {
+    console.warn(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Rate-limit rejection: 15-minute window limit exceeded for ${displayEmail}`);
     const error = new Error(
       'Too many OTP requests. Please wait a few minutes before trying again.'
     );
@@ -115,12 +130,23 @@ const requestOtp = async (rawEmail) => {
 
   // Anti-enumeration: If user does not exist or is not ACTIVE, return generic success
   // without inserting an OTP or revealing account state.
-  if (!user || user.status !== 'ACTIVE') {
+  if (!user) {
+    console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Account lookup: NOT FOUND for ${displayEmail}. Returning anti-enumeration response.`);
     return {
       success: true,
       message: 'If the account is eligible, an OTP has been sent.',
     };
   }
+
+  if (user.status !== 'ACTIVE') {
+    console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Account lookup: FOUND but INACTIVE (status: ${user.status}) for ${displayEmail}. Returning anti-enumeration response.`);
+    return {
+      success: true,
+      message: 'If the account is eligible, an OTP has been sent.',
+    };
+  }
+
+  console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Account lookup: FOUND and ACTIVE (Role: ${user.role}) for ${displayEmail}`);
 
   // 4. Invalidate previous active unverified OTPs for this user
   await pool.query(
@@ -136,18 +162,33 @@ const requestOtp = async (rawEmail) => {
   const expiresAt = new Date(Date.now() + OTP_EXPIRATION_MINUTES * 60 * 1000);
 
   // 6. Store hashed OTP in database
-  const insertResult = await pool.query(
-    `INSERT INTO otp_verifications (user_id, email, otp_hash, expires_at, attempts)
-     VALUES ($1, $2, $3, $4, 0)
-     RETURNING id`,
-    [user.id, email, otpHash, expiresAt]
-  );
-  const otpRecordId = insertResult.rows[0]?.id;
+  console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] OTP generation started. Persisting hashed token to database...`);
+  let otpRecordId;
+  try {
+    const insertResult = await pool.query(
+      `INSERT INTO otp_verifications (user_id, email, otp_hash, expires_at, attempts)
+       VALUES ($1, $2, $3, $4, 0)
+       RETURNING id`,
+      [user.id, email, otpHash, expiresAt]
+    );
+    otpRecordId = insertResult.rows[0]?.id;
+    console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] OTP persistence SUCCESS (Record ID: ${otpRecordId}). Raw OTP and hash withheld.`);
+  } catch (dbErr) {
+    console.error(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] OTP persistence FAILURE for ${displayEmail}. Reason: ${dbErr.message}`);
+    throw dbErr;
+  }
 
   // 7. Dispatch OTP via email delivery provider
+  console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Email dispatch started for ${displayEmail} (TestMode: ${Boolean(options.isTestMode)})`);
   try {
-    await sendOtpEmail({ to: email, otp });
+    await sendOtpEmail({
+      to: email,
+      otp,
+      isTestMode: Boolean(options.isTestMode),
+    });
+    console.log(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Email dispatch completed successfully for ${displayEmail}`);
   } catch (deliveryError) {
+    console.error(`[OTP_DEBUG_BACKEND] [${new Date().toISOString()}] Email dispatch failed for ${displayEmail}. Reason: ${deliveryError.message}`);
     // If delivery fails, remove the undelivered OTP record to prevent leaving an orphaned active OTP
     if (otpRecordId) {
       await pool.query('DELETE FROM otp_verifications WHERE id = $1', [otpRecordId]).catch(() => {});
@@ -258,7 +299,7 @@ const verifyOtp = async (rawEmail, rawOtp) => {
 
   // 6. Fetch authoritative user profile and employee linkage
   const userResult = await pool.query(
-    `SELECT u.id, u.email, u.role, u.status, u.employee_id,
+    `SELECT u.id, u.admin_id, u.email, u.role, u.status, u.employee_id,
             COALESCE(e.first_name, u.first_name) AS first_name,
             COALESCE(e.last_name, u.last_name) AS last_name,
             e.department, e.designation
@@ -290,6 +331,8 @@ const verifyOtp = async (rawEmail, rawOtp) => {
     token,
     user: {
       id: user.id,
+      adminId: user.admin_id || null,
+      admin_id: user.admin_id || null,
       email: user.email,
       role: user.role,
       employee_id: user.employee_id || null,

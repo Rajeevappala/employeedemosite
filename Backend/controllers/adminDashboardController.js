@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const birthdayService = require('../services/birthdayService');
 
 const MONTH_NAMES = [
   'january', 'february', 'march', 'april', 'may', 'june',
@@ -116,6 +117,7 @@ const getAdminDashboard = async (req, res, next) => {
       departmentRes,
       recentLeavesRes,
       recentPayrollRes,
+      birthdayData,
     ] = await Promise.all([
       // 1. Employee summary
       pool.query(`
@@ -224,6 +226,9 @@ const getAdminDashboard = async (req, res, next) => {
         ORDER BY COALESCE(pr.processed_at, pr.created_at) DESC
         LIMIT 5
       `),
+
+      // 9. Active Employee Birthdays this month (Admin view includes employee_id and department)
+      birthdayService.getCurrentMonthBirthdays({ forAdmin: true }),
     ]);
 
     // Format employee stats
@@ -309,6 +314,8 @@ const getAdminDashboard = async (req, res, next) => {
         departments,
         recent_leaves: recentLeavesRes.rows,
         recent_payroll: recentPayrollRes.rows,
+        birthday_employees: birthdayData.birthdays,
+        birthday_month_name: birthdayData.current_month_name,
       },
     });
   } catch (error) {

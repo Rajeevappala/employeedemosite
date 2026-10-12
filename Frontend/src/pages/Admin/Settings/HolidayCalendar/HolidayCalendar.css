@@ -1,0 +1,837 @@
+/* ==========================================================================
+   Admin Holiday Calendar Settings Styles
+   Organization: GaintPro Software Technologies
+   ========================================================================== */
+
+.admin-holiday-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* Top Nav & Breadcrumbs */
+.admin-holiday-top-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.admin-holiday-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #475569;
+  text-decoration: none;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.admin-holiday-back-btn:hover {
+  color: #0f172a;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.admin-holiday-back-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.admin-holiday-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.admin-holiday-breadcrumbs a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.admin-holiday-breadcrumbs a:hover {
+  text-decoration: underline;
+}
+
+.admin-holiday-breadcrumbs span.separator {
+  color: #94a3b8;
+}
+
+.admin-holiday-breadcrumbs span.current {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+/* Header Card */
+.admin-holiday-header-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.5rem 1.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.admin-holiday-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-holiday-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+}
+
+.admin-holiday-subtitle {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.admin-holiday-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #2563eb;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 1px solid #2563eb;
+  border-radius: 0.5rem;
+  padding: 0.625rem 1.125rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+}
+
+.admin-holiday-add-btn:hover {
+  background-color: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.admin-holiday-add-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Metric Summary Cards */
+.admin-holiday-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  width: 100%;
+}
+
+.admin-holiday-metric-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.admin-holiday-metric-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 0.625rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.admin-holiday-metric-icon.icon-upcoming {
+  background-color: #eff6ff;
+  color: #2563eb;
+}
+
+.admin-holiday-metric-icon.icon-year {
+  background-color: #fef3c7;
+  color: #d97706;
+}
+
+.admin-holiday-metric-icon.icon-past {
+  background-color: #f1f5f9;
+  color: #64748b;
+}
+
+.admin-holiday-metric-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.admin-holiday-metric-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.admin-holiday-metric-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.admin-holiday-metric-val {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+/* Toolbar & Filters */
+.admin-holiday-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.admin-holiday-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.admin-holiday-filter-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.admin-holiday-select {
+  font-size: 0.875rem;
+  color: #0f172a;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 0.45rem 2rem 0.45rem 0.75rem;
+  outline: none;
+  cursor: pointer;
+  appearance: auto;
+  transition: border-color 0.15s ease;
+}
+
+.admin-holiday-select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.admin-holiday-status-pills {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: #f1f5f9;
+  padding: 0.25rem;
+  border-radius: 0.5rem;
+}
+
+.admin-holiday-pill-btn {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  border-radius: 0.375rem;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-holiday-pill-btn.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Alert Notification Banners */
+.admin-holiday-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+.admin-holiday-alert svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.admin-holiday-alert-success {
+  background-color: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+}
+
+.admin-holiday-alert-success svg {
+  color: #059669;
+}
+
+.admin-holiday-alert-error {
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.admin-holiday-alert-error svg {
+  color: #dc2626;
+}
+
+/* Holiday List Table */
+.admin-holiday-table-container {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.admin-holiday-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.admin-holiday-table th {
+  background-color: #f8fafc;
+  color: #475569;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.admin-holiday-table td {
+  padding: 1rem 1.25rem;
+  font-size: 0.875rem;
+  color: #1e293b;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.admin-holiday-table tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-holiday-table tr:hover td {
+  background-color: #f8fafc;
+}
+
+/* Date cell styling */
+.admin-holiday-date-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.admin-holiday-date-main {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.admin-holiday-date-day {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.admin-holiday-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.admin-holiday-name-title {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.admin-holiday-desc-text {
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.4;
+  max-width: 320px;
+}
+
+/* Status Badges */
+.admin-holiday-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  text-transform: capitalize;
+}
+
+.admin-holiday-status-badge.status-upcoming {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.admin-holiday-status-badge.status-today {
+  background-color: #fefce8;
+  color: #a16207;
+  border: 1px solid #fef08a;
+}
+
+.admin-holiday-status-badge.status-past {
+  background-color: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+/* Action Buttons inside Table */
+.admin-holiday-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-holiday-btn-apply {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  background-color: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.admin-holiday-btn-apply:hover:not(:disabled) {
+  background-color: #dcfce7;
+  border-color: #86efac;
+}
+
+.admin-holiday-btn-apply:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.admin-holiday-btn-apply.applied {
+  background-color: #f8fafc;
+  color: #059669;
+  border-color: #e2e8f0;
+  font-weight: 500;
+}
+
+.admin-holiday-btn-icon {
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.375rem;
+  padding: 0.35rem;
+  color: #64748b;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.admin-holiday-btn-icon:hover {
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.admin-holiday-btn-icon.delete:hover {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+.admin-holiday-btn-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Empty State */
+.admin-holiday-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  gap: 1rem;
+  text-align: center;
+}
+
+.admin-holiday-empty-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+}
+
+.admin-holiday-empty-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.admin-holiday-empty-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+}
+
+.admin-holiday-empty-text {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin: 0;
+  max-width: 400px;
+}
+
+/* Loading Spinner */
+.admin-holiday-loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  gap: 1rem;
+}
+
+.admin-holiday-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: adminHolidaySpin 0.8s linear infinite;
+}
+
+@keyframes adminHolidaySpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Modal Overlay & Card */
+.admin-holiday-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 1000;
+  box-sizing: border-box;
+}
+
+.admin-holiday-modal {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  width: 100%;
+  max-width: 520px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 90vh;
+}
+
+.admin-holiday-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.admin-holiday-modal-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.admin-holiday-modal-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.375rem;
+  transition: color 0.15s ease;
+}
+
+.admin-holiday-modal-close-btn:hover {
+  color: #0f172a;
+}
+
+.admin-holiday-modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.admin-holiday-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.admin-holiday-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.admin-holiday-required {
+  color: #dc2626;
+  margin-left: 0.2rem;
+}
+
+.admin-holiday-input,
+.admin-holiday-textarea {
+  width: 100%;
+  font-size: 0.9375rem;
+  color: #0f172a;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  outline: none;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.admin-holiday-input:focus,
+.admin-holiday-textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.admin-holiday-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.admin-holiday-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.admin-holiday-modal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.admin-holiday-modal-btn.cancel {
+  background: #ffffff;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
+.admin-holiday-modal-btn.cancel:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.admin-holiday-modal-btn.primary {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.admin-holiday-modal-btn.primary:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.admin-holiday-modal-btn.danger {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.admin-holiday-modal-btn.danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.admin-holiday-modal-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Mobile Responsive Cards */
+.admin-holiday-cards-mobile {
+  display: none;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+}
+
+.admin-holiday-card-item {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.admin-holiday-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.admin-holiday-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 0.875rem;
+}
+
+/* ==========================================================================
+   Responsive Adaptations
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .admin-holiday-table-container {
+    display: none;
+  }
+
+  .admin-holiday-cards-mobile {
+    display: flex;
+  }
+
+  .admin-holiday-header-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .admin-holiday-add-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .admin-holiday-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-holiday-filter-group {
+    justify-content: space-between;
+  }
+
+  .admin-holiday-status-pills {
+    width: 100%;
+    justify-content: space-around;
+  }
+
+  .admin-holiday-pill-btn {
+    flex: 1;
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-holiday-header-card {
+    padding: 1.125rem;
+  }
+
+  .admin-holiday-title {
+    font-size: 1.25rem;
+  }
+
+  .admin-holiday-modal-footer {
+    flex-direction: column-reverse;
+  }
+
+  .admin-holiday-modal-btn {
+    width: 100%;
+  }
+}
