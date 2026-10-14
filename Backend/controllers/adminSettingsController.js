@@ -1450,7 +1450,7 @@ const getEmployeeConfiguration = async (req, res, next) => {
         SELECT d.id, d.name, d.description, d.is_active, d.created_at, d.updated_at,
           (SELECT COUNT(*)::int FROM public.employees e WHERE LOWER(TRIM(e.designation)) = LOWER(TRIM(d.name))) AS employee_count
         FROM public.organization_designations d
-        ORDER BY d.name ASC
+        ORDER BY d.is_active DESC, d.name ASC
       `),
       pool.query(`
         SELECT et.id, et.name, et.description, et.is_active, et.created_at, et.updated_at,

@@ -83,7 +83,7 @@ function generateRelievingLetterPdf({ employee, exitRequest }) {
       doc.text(`To: ${employee.first_name || ''} ${employee.last_name || ''}`.trim(), margin, y);
       doc.font('Helvetica').fontSize(10).fillColor(mutedColor);
       doc.text(`Employee ID: ${employee.employee_id}`, margin, y + 16);
-      doc.text(`Designation: ${employee.designation || 'Software Engineer'}`, margin, y + 30);
+      doc.text(`Designation: ${employee.designation || 'Associate'}`, margin, y + 30);
       doc.text(`Department: ${employee.department || 'Technology'}`, margin, y + 44);
 
       y += 75;
@@ -204,7 +204,7 @@ function generateExperienceCertificatePdf({ employee, exitRequest }) {
 
       y += 50;
 
-      const text2 = `During the tenure of employment, ${empName} was designated as ${employee.designation || 'Software Engineer'} within the ${employee.department || 'Technology'} department. In this capacity, ${empName} demonstrated exceptional technical proficiency, sincerity, and commitment to organizational standards.`;
+      const text2 = `During the tenure of employment, ${empName} was designated as ${employee.designation || 'Associate'} within the ${employee.department || 'Technology'} department. In this capacity, ${empName} demonstrated exceptional technical proficiency, sincerity, and commitment to organizational standards.`;
       doc.text(text2, margin, y, { width: contentWidth, align: 'justify' });
 
       y += 70;

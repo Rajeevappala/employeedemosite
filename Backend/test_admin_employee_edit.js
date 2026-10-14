@@ -210,8 +210,8 @@ async function runTests() {
     // Test 4, 5 & 6: Admin can modify employee details, save, and persist in PostgreSQL
     // =========================================================================
     console.log('\n--- Test 4, 5 & 6: Admin modifies employee details, saves & persists in DB ---');
-    const updatedDept = 'Engineering';
-    const updatedDesignation = 'Senior Tech Lead';
+    const updatedDept = 'IT';
+    const updatedDesignation = 'Associate Software Engineer';
     const updatedBasic = '55000';
     const updatedPlBalance = '18';
     const updatedUan = '100987654321';

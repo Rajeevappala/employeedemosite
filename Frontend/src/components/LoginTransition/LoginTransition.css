@@ -1,0 +1,252 @@
+/* ==========================================================================
+   GaintPro HRM — Login Transition Animation Screen
+   ========================================================================== */
+
+.login-transition-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 99999;
+  background: radial-gradient(circle at 50% 45%, #ffffff 0%, #f8fafc 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.login-transition-overlay.fade-in {
+  animation: loginOverlayFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.login-transition-overlay.fade-out {
+  animation: loginOverlayFadeOut 0.4s ease forwards;
+}
+
+@keyframes loginOverlayFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes loginOverlayFadeOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.01);
+  }
+}
+
+.login-transition-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 720px;
+  text-align: center;
+}
+
+/* Video Stage */
+.login-transition-video-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 660px;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 12px;
+  background-color: #ffffff;
+}
+
+.login-transition-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  background-color: #ffffff;
+}
+
+.login-transition-video.hidden {
+  opacity: 0;
+  position: absolute;
+}
+
+.login-transition-video.visible {
+  opacity: 1;
+}
+
+/* Lightweight Fallback / Initial Placeholder Stage */
+.login-transition-fallback-card {
+  width: 100%;
+  max-width: 480px;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  background: #ffffff;
+}
+
+.login-transition-fallback-card.initial-loading {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: auto;
+}
+
+.login-transition-logo {
+  max-width: 280px;
+  width: 70%;
+  height: auto;
+  object-fit: contain;
+  animation: logoPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes logoPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+}
+
+/* Status & Messaging Area */
+.login-transition-status {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.login-transition-message {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.login-transition-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  letter-spacing: 0.02em;
+}
+
+/* Modern Gradient Progress Line */
+.login-transition-progress-track {
+  width: 150px;
+  height: 3px;
+  background-color: #e2e8f0;
+  border-radius: 9999px;
+  overflow: hidden;
+  margin-top: 0.25rem;
+  position: relative;
+}
+
+.login-transition-progress-bar {
+  position: absolute;
+  height: 100%;
+  width: 45%;
+  background: linear-gradient(90deg, #2563eb 0%, #06b6d4 100%);
+  border-radius: 9999px;
+  animation: progressSlide 1.4s ease-in-out infinite;
+}
+
+@keyframes progressSlide {
+  0% {
+    left: -45%;
+  }
+  50% {
+    left: 40%;
+    width: 60%;
+  }
+  100% {
+    left: 100%;
+    width: 45%;
+  }
+}
+
+/* ==========================================================================
+   Prefers Reduced Motion Accessibility
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .login-transition-overlay.fade-in,
+  .login-transition-overlay.fade-out {
+    animation: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .login-transition-logo {
+    animation: none;
+    transform: none;
+  }
+
+  .login-transition-progress-bar {
+    animation: none;
+    left: 0;
+    width: 100%;
+    background: #2563eb;
+  }
+}
+
+/* ==========================================================================
+   Mobile Viewports (< 640px)
+   ========================================================================== */
+@media (max-width: 640px) {
+  .login-transition-overlay {
+    padding: 1rem;
+  }
+
+  .login-transition-video-wrapper {
+    max-width: 100%;
+    border-radius: 8px;
+  }
+
+  .login-transition-logo {
+    max-width: 220px;
+  }
+
+  .login-transition-message {
+    font-size: 0.95rem;
+  }
+
+  .login-transition-status {
+    margin-top: 1rem;
+  }
+
+  .login-transition-progress-track {
+    width: 120px;
+  }
+}

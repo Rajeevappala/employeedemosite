@@ -3,8 +3,22 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../../services/api';
 import './PFDetails.css';
 
+// Format currency in Indian Rupees
+function formatCurrency(val) {
+  if (val === null || val === undefined || val === '' || val === '—') return 'Not configured';
+  const num = parseFloat(val);
+  if (isNaN(num)) return 'Not configured';
+  return `₹${num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 // Normalizes backend employee PF rows to frontend model
 function mapPfRow(r) {
+  const hasEmpContrib = r.employee_contribution !== null && r.employee_contribution !== undefined && r.employee_contribution !== '';
+  const hasEmprContrib = r.employer_contribution !== null && r.employer_contribution !== undefined && r.employer_contribution !== '';
+  const empVal = hasEmpContrib ? parseFloat(r.employee_contribution) : null;
+  const emprVal = hasEmprContrib ? parseFloat(r.employer_contribution) : null;
+  const totalVal = (empVal !== null || emprVal !== null) ? ((empVal || 0) + (emprVal || 0)) : null;
+
   return {
     id: r.pf_id || r.employee_id,
     employeeId: r.employee_id,
@@ -15,8 +29,11 @@ function mapPfRow(r) {
     uan: r.uan_number || '—',
     pfNumber: r.pf_number || '—',
     pensionNumber: r.pension_number || '—',
-    employeeContribution: '—',
-    employerContribution: '—',
+    rawEmployeeContribution: r.employee_contribution,
+    rawEmployerContribution: r.employer_contribution,
+    employeeContribution: formatCurrency(r.employee_contribution),
+    employerContribution: formatCurrency(r.employer_contribution),
+    totalContribution: formatCurrency(totalVal),
     status: r.pf_status || 'Not Available',
     dateOfJoining: r.date_of_joining || '—',
     lastUpdated: r.pf_updated_formatted || r.pf_created_formatted || '—',
@@ -47,6 +64,10 @@ function PFDetails() {
     pf_active: 0,
     pf_pending: 0,
     pf_not_available: 0,
+    total_employee_contribution: 0,
+    total_employer_contribution: 0,
+    total_monthly_contribution: 0,
+    configured_contribution_count: 0,
   });
 
   // Modals state
@@ -57,6 +78,8 @@ function PFDetails() {
     uan: '',
     pfNumber: '',
     pensionNumber: '',
+    employeeContribution: '',
+    employerContribution: '',
   });
 
   const [toastMessage, setToastMessage] = useState('');
@@ -157,6 +180,8 @@ function PFDetails() {
       uan: rec.uan === '—' || rec.uan === '-' ? '' : rec.uan,
       pfNumber: rec.pfNumber === '—' || rec.pfNumber === '-' ? '' : rec.pfNumber,
       pensionNumber: rec.pensionNumber === '—' || rec.pensionNumber === '-' ? '' : rec.pensionNumber,
+      employeeContribution: rec.rawEmployeeContribution !== null && rec.rawEmployeeContribution !== undefined ? String(rec.rawEmployeeContribution) : '',
+      employerContribution: rec.rawEmployerContribution !== null && rec.rawEmployerContribution !== undefined ? String(rec.rawEmployerContribution) : '',
     });
     setActionError('');
     setOpenDropdownId(null);
@@ -166,6 +191,23 @@ function PFDetails() {
   const handleSaveEdit = async (e) => {
     e.preventDefault();
     if (!editRecord) return;
+
+    if (editForm.employeeContribution.trim()) {
+      const val = parseFloat(editForm.employeeContribution.trim());
+      if (isNaN(val) || val < 0) {
+        setActionError('Employee contribution must be a valid non-negative number.');
+        return;
+      }
+    }
+
+    if (editForm.employerContribution.trim()) {
+      const val = parseFloat(editForm.employerContribution.trim());
+      if (isNaN(val) || val < 0) {
+        setActionError('Employer contribution must be a valid non-negative number.');
+        return;
+      }
+    }
+
     setActionLoading(true);
     setActionError('');
     try {
@@ -173,6 +215,8 @@ function PFDetails() {
         uan: editForm.uan.trim() || null,
         pfNumber: editForm.pfNumber.trim() || null,
         pensionNumber: editForm.pensionNumber.trim() || null,
+        employeeContribution: editForm.employeeContribution.trim() || null,
+        employerContribution: editForm.employerContribution.trim() || null,
       });
       showToast(`PF details for ${editRecord.name} updated successfully.`);
       setEditRecord(null);
@@ -739,7 +783,7 @@ function PFDetails() {
         <div className="admin-card-header">
           <div>
             <h2 className="admin-card-title">Contribution Overview</h2>
-            <p className="admin-card-subtitle">Monthly provident fund deduction totals</p>
+            <p className="admin-card-subtitle">Monthly provident fund deduction totals across all employees</p>
           </div>
           <span className="admin-badge admin-badge-neutral">Current Month</span>
         </div>
@@ -747,20 +791,59 @@ function PFDetails() {
         <div className="admin-contribution-stats-grid">
           <div className="admin-contribution-box box-blue">
             <span className="contrib-label">Employee Contributions</span>
-            <span className="contrib-value">— <span className="contrib-period">/ month</span></span>
-            <span className="contrib-desc">Not configured in payroll</span>
+            <span className="contrib-value">
+              {summaryStats.configured_contribution_count > 0 ? (
+                <>
+                  {formatCurrency(summaryStats.total_employee_contribution)}{' '}
+                  <span className="contrib-period">/ month</span>
+                </>
+              ) : (
+                'Not configured'
+              )}
+            </span>
+            <span className="contrib-desc">
+              {summaryStats.configured_contribution_count > 0
+                ? `${summaryStats.configured_contribution_count} employees configured`
+                : 'Not configured in employee records'}
+            </span>
           </div>
 
           <div className="admin-contribution-box box-purple">
             <span className="contrib-label">Employer Contributions</span>
-            <span className="contrib-value">— <span className="contrib-period">/ month</span></span>
-            <span className="contrib-desc">Not configured in payroll</span>
+            <span className="contrib-value">
+              {summaryStats.configured_contribution_count > 0 ? (
+                <>
+                  {formatCurrency(summaryStats.total_employer_contribution)}{' '}
+                  <span className="contrib-period">/ month</span>
+                </>
+              ) : (
+                'Not configured'
+              )}
+            </span>
+            <span className="contrib-desc">
+              {summaryStats.configured_contribution_count > 0
+                ? `${summaryStats.configured_contribution_count} employees configured`
+                : 'Not configured in employee records'}
+            </span>
           </div>
 
           <div className="admin-contribution-box box-green">
             <span className="contrib-label">Total Monthly Contributions</span>
-            <span className="contrib-value text-success">— <span className="contrib-period">/ month</span></span>
-            <span className="contrib-desc">EPFO remittance record pending</span>
+            <span className={`contrib-value ${summaryStats.configured_contribution_count > 0 ? 'text-success' : ''}`}>
+              {summaryStats.configured_contribution_count > 0 ? (
+                <>
+                  {formatCurrency(summaryStats.total_monthly_contribution)}{' '}
+                  <span className="contrib-period">/ month</span>
+                </>
+              ) : (
+                'Not configured'
+              )}
+            </span>
+            <span className="contrib-desc">
+              {summaryStats.configured_contribution_count > 0
+                ? 'Combined monthly PF deduction'
+                : 'No employee contributions configured'}
+            </span>
           </div>
         </div>
       </section>
@@ -865,22 +948,22 @@ function PFDetails() {
 
                   <div className="admin-pf-item">
                     <span className="pf-item-lbl">Employee Contribution</span>
-                    <span className="pf-item-val text-muted">
+                    <span className={`pf-item-val ${viewRecord.employeeContribution === 'Not configured' ? 'text-muted' : 'font-semibold'}`}>
                       {viewRecord.employeeContribution}
                     </span>
                   </div>
 
                   <div className="admin-pf-item">
                     <span className="pf-item-lbl">Employer Contribution</span>
-                    <span className="pf-item-val text-muted">
+                    <span className={`pf-item-val ${viewRecord.employerContribution === 'Not configured' ? 'text-muted' : 'font-semibold'}`}>
                       {viewRecord.employerContribution}
                     </span>
                   </div>
 
                   <div className="admin-pf-item">
                     <span className="pf-item-lbl">Total Monthly Contribution</span>
-                    <span className="pf-item-val text-muted">
-                      —
+                    <span className={`pf-item-val ${viewRecord.totalContribution === 'Not configured' ? 'text-muted' : 'font-semibold text-success'}`}>
+                      {viewRecord.totalContribution}
                     </span>
                   </div>
 
@@ -1031,6 +1114,46 @@ function PFDetails() {
                     readOnly
                     className="admin-field-input admin-field-readonly"
                     value={editRecord.status}
+                  />
+                </div>
+
+                {/* Employee Contribution (₹) */}
+                <div className="admin-form-field">
+                  <label htmlFor="employeeContribInput" className="admin-field-label">
+                    Employee Contribution (₹)
+                  </label>
+                  <input
+                    id="employeeContribInput"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className="admin-field-input"
+                    placeholder="e.g. 1800.00"
+                    value={editForm.employeeContribution}
+                    onChange={(e) =>
+                      setEditForm((p) => ({ ...p, employeeContribution: e.target.value }))
+                    }
+                    disabled={actionLoading}
+                  />
+                </div>
+
+                {/* Employer Contribution (₹) */}
+                <div className="admin-form-field">
+                  <label htmlFor="employerContribInput" className="admin-field-label">
+                    Employer Contribution (₹)
+                  </label>
+                  <input
+                    id="employerContribInput"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className="admin-field-input"
+                    placeholder="e.g. 1800.00"
+                    value={editForm.employerContribution}
+                    onChange={(e) =>
+                      setEditForm((p) => ({ ...p, employerContribution: e.target.value }))
+                    }
+                    disabled={actionLoading}
                   />
                 </div>
               </div>

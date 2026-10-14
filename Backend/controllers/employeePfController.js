@@ -5,8 +5,8 @@ const pool = require('../config/database');
  * Security:
  * - Employee identity is derived strictly from req.user.employee_id.
  * - Client-supplied URL parameters, query parameters, or request body IDs are completely ignored.
- * - Only queries actual existing columns in the pf_details table.
- * - Returns HTTP 200 with data: null if no PF record exists for the employee.
+ * - Sourced strictly from PostgreSQL tables: employees and pf_details.
+ * - Returns HTTP 200 with complete PF and employment details.
  */
 const getEmployeePfDetails = async (req, res, next) => {
   try {
@@ -21,29 +21,60 @@ const getEmployeePfDetails = async (req, res, next) => {
 
     const query = `
       SELECT 
-        id,
-        employee_id,
-        uan_number,
-        pf_number,
-        pension_number,
-        created_at,
-        updated_at
-      FROM pf_details
-      WHERE employee_id = $1
+        pd.id,
+        e.employee_id,
+        TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS employee_name,
+        e.department,
+        e.designation,
+        e.status AS employment_status,
+        TO_CHAR(e.created_at, 'YYYY-MM-DD') AS date_of_joining,
+        pd.uan_number,
+        pd.pf_number,
+        pd.pension_number,
+        pd.employee_contribution,
+        pd.employer_contribution,
+        CASE
+          WHEN pd.uan_number IS NOT NULL AND pd.uan_number != '' AND pd.pf_number IS NOT NULL AND pd.pf_number != '' THEN 'Active'
+          WHEN (pd.uan_number IS NOT NULL AND pd.uan_number != '') OR (pd.pf_number IS NOT NULL AND pd.pf_number != '') THEN 'Pending'
+          ELSE 'Not Available'
+        END AS pf_status,
+        pd.created_at,
+        pd.updated_at
+      FROM public.employees e
+      LEFT JOIN public.pf_details pd ON pd.employee_id = e.employee_id
+      WHERE e.employee_id = $1
     `;
 
     const result = await pool.query(query, [employeeId]);
 
     if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee record not found.',
+      });
+    }
+
+    const row = result.rows[0];
+
+    // If no PF row exists in pf_details table, return data: null with employment context
+    if (!row.id && !row.uan_number && !row.pf_number) {
       return res.status(200).json({
         success: true,
         data: null,
+        employment: {
+          employee_id: row.employee_id,
+          employee_name: row.employee_name,
+          department: row.department,
+          designation: row.designation,
+          employment_status: row.employment_status,
+          date_of_joining: row.date_of_joining,
+        },
       });
     }
 
     return res.status(200).json({
       success: true,
-      data: result.rows[0],
+      data: row,
     });
   } catch (error) {
     next(error);

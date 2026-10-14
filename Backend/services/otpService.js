@@ -5,16 +5,19 @@ const { sendOtpEmail } = require('./emailService');
 
 const getOtpSecret = () => {
   const secret = process.env.OTP_SECRET || process.env.SESSION_SECRET;
-  if (!secret) {
+  if (!secret || !secret.trim()) {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('OTP_SECRET (or SESSION_SECRET) must be configured in production environment.');
     }
     return 'dev_otp_pepper_employee_portal_2026';
   }
-  return secret;
+  if (process.env.NODE_ENV === 'production' && secret.trim().length < 16) {
+    throw new Error('OTP_SECRET must be at least 16 characters in production environment.');
+  }
+  return secret.trim();
 };
 
-const OTP_EXPIRATION_MINUTES = 5;
+const OTP_EXPIRATION_SECONDS = 120; // 2 minutes (120 seconds)
 const MAX_VERIFICATION_ATTEMPTS = 5;
 const RATE_LIMIT_COOLDOWN_SECONDS = 60;
 const RATE_LIMIT_MAX_PER_WINDOW = 5;
@@ -164,7 +167,7 @@ const requestOtp = async (rawEmail, options = {}) => {
   const tGenStart = performance.now();
   const otp = generateSecureOtp();
   const otpHash = hashOtp(otp);
-  const expiresAt = new Date(Date.now() + OTP_EXPIRATION_MINUTES * 60 * 1000);
+  const expiresAt = new Date(Date.now() + OTP_EXPIRATION_SECONDS * 1000);
   const tGenEnd = performance.now();
   const genDuration = (tGenEnd - tGenStart).toFixed(2);
 

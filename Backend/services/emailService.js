@@ -217,7 +217,7 @@ Your OTP for signing in to the GaintPro Employee Portal is:
 
 ${otp}
 
-This OTP is valid for 5 minutes.
+This OTP is valid for 2 minutes (120 seconds).
 Do not share this OTP with anyone.
 
 If you did not request this OTP, you can safely ignore this email.
@@ -253,7 +253,7 @@ GaintPro Employee Portal`;
           <strong>Security Notice:</strong>
         </p>
         <ul style="margin: 0 0 24px; padding-left: 20px; font-size: 13px; line-height: 1.6; color: #64748b;">
-          <li>This OTP is valid for <strong>5 minutes</strong>.</li>
+          <li>This OTP is valid for <strong>2 minutes (120 seconds)</strong>.</li>
           <li><strong>Do not share this OTP</strong> with anyone. GaintPro staff will never ask for your OTP.</li>
           <li>If you did not request this OTP, you can safely ignore this email.</li>
         </ul>

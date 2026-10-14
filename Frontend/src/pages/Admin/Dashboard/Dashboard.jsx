@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../../services/api';
 import './Dashboard.css';
@@ -7,6 +7,8 @@ const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
+
+const CURRENT_CALENDAR_YEAR = new Date().getFullYear();
 
 /**
  * Formats a currency amount into standard Indian Rupee notation (₹XX,XXX.XX)
@@ -67,17 +69,37 @@ function Dashboard() {
 
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [payrollLoading, setPayrollLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [toastMessage, setToastMessage] = useState('');
+  const [downloadingId, setDownloadingId] = useState(null);
 
-  // Available year choices around selected year
-  const availableYears = [selectedYear + 1, selectedYear, selectedYear - 1, selectedYear - 2];
+  const hasLoadedInitial = useRef(false);
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage('');
+    }, 3500);
+  };
+
+  // Available year choices: merges years from backend with current/adjacent years
+  const availableYears = useMemo(() => {
+    const list = dashboardData?.payroll?.available_years || [];
+    const set = new Set([...list, CURRENT_CALENDAR_YEAR + 1, CURRENT_CALENDAR_YEAR, CURRENT_CALENDAR_YEAR - 1, CURRENT_CALENDAR_YEAR - 2, 2026]);
+    return Array.from(set).sort((a, b) => b - a);
+  }, [dashboardData?.payroll?.available_years]);
 
   // Fetch dashboard data
   useEffect(() => {
     let ignore = false;
 
     async function loadData() {
-      setLoading(true);
+      if (!hasLoadedInitial.current) {
+        setLoading(true);
+      } else {
+        setPayrollLoading(true);
+      }
       setError(null);
       try {
         const response = await api.admin.getDashboard({
@@ -86,6 +108,7 @@ function Dashboard() {
         });
         if (!ignore && response?.success) {
           setDashboardData(response.data);
+          hasLoadedInitial.current = true;
         }
       } catch (err) {
         if (!ignore) {
@@ -94,6 +117,7 @@ function Dashboard() {
       } finally {
         if (!ignore) {
           setLoading(false);
+          setPayrollLoading(false);
         }
       }
     }
@@ -119,6 +143,40 @@ function Dashboard() {
       .finally(() => {
         setLoading(false);
       });
+  };
+
+  // Download payslip document
+  const handleDownloadPayslip = async (documentId, fileName, employeeId) => {
+    if (!documentId) return;
+    try {
+      setDownloadingId(documentId);
+      const blob = await api.admin.downloadDocument(documentId, employeeId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName || `Payslip_${employeeId || 'Employee'}_${selectedMonthName}_${selectedYear}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      showToast(`Downloaded payslip for ${employeeId || 'employee'} successfully.`);
+    } catch (err) {
+      showToast(`Failed to download payslip: ${err.message}`);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  // View payslip document in new tab
+  const handleViewPayslip = async (documentId, employeeId) => {
+    if (!documentId) return;
+    try {
+      const blob = await api.admin.viewDocument(documentId, employeeId);
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err) {
+      showToast(`Failed to open payslip preview: ${err.message}`);
+    }
   };
 
   const selectedMonthName = MONTH_NAMES[selectedMonth - 1] || `Month ${selectedMonth}`;
@@ -186,6 +244,16 @@ function Dashboard() {
 
   return (
     <div className="admin-dashboard-page">
+      {toastMessage && (
+        <div className="admin-toast-banner" role="status" aria-live="polite">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* 1. Page Header */}
       <header className="admin-page-header">
         <div className="admin-page-title-group">
@@ -471,23 +539,72 @@ function Dashboard() {
 
       {/* 5. Payroll Summary Section */}
       <section className="admin-card" aria-label="Payroll Summary">
-        <div className="admin-card-header">
+        <div className="admin-payroll-card-header">
           <div className="admin-card-header-left">
             <h2 className="admin-card-title">
               Payroll Overview &mdash; {selectedMonthName} {selectedYear}
             </h2>
             <p className="admin-card-subtitle">
-              Processed salaries and payout status for the selected period
+              Processed salaries, payout status, and generated payslips for the selected period
             </p>
           </div>
-          <button
-            type="button"
-            className="admin-card-action-link"
-            onClick={() => navigate('/admin/payroll')}
-          >
-            Manage Payroll &rarr;
-          </button>
+
+          <div className="admin-payroll-controls-bar">
+            <div className="admin-payroll-selectors">
+              <label htmlFor="payroll-overview-month-select" className="admin-sr-only">
+                Payroll Month
+              </label>
+              <select
+                id="payroll-overview-month-select"
+                className="admin-select admin-select-payroll-month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))}
+                aria-label="Payroll Overview Month"
+              >
+                {MONTH_NAMES.map((name, idx) => (
+                  <option key={name} value={idx + 1}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="payroll-overview-year-select" className="admin-sr-only">
+                Payroll Year
+              </label>
+              <select
+                id="payroll-overview-year-select"
+                className="admin-select admin-select-payroll-year"
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
+                aria-label="Payroll Overview Year"
+              >
+                {availableYears.map((yr) => (
+                  <option key={yr} value={yr}>
+                    {yr}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              className="admin-btn-secondary admin-view-payroll-btn"
+              onClick={() => navigate(`/admin/payroll?month=${selectedMonth}&year=${selectedYear}`)}
+              title="Open full payroll management for this period"
+            >
+              View Payroll &rarr;
+            </button>
+          </div>
         </div>
+
+        {payrollLoading && (
+          <div className="admin-payroll-loading-indicator" role="status" aria-live="polite">
+            <svg className="admin-state-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '16px', height: '16px' }}>
+              <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="12" />
+            </svg>
+            <span>Loading {selectedMonthName} {selectedYear} payroll overview...</span>
+          </div>
+        )}
 
         {payroll?.total_records === 0 ? (
           <div className="admin-empty-state-box">
@@ -503,9 +620,48 @@ function Dashboard() {
             <p className="admin-empty-state-desc">
               No salary records exist for {selectedMonthName} {selectedYear}. Navigate to the Payroll section to calculate and process wages.
             </p>
+            <button
+              type="button"
+              className="admin-btn-secondary"
+              style={{ marginTop: '0.75rem' }}
+              onClick={() => navigate(`/admin/payroll?month=${selectedMonth}&year=${selectedYear}`)}
+            >
+              Process Payroll for {selectedMonthName} {selectedYear} &rarr;
+            </button>
           </div>
         ) : (
           <>
+            {/* Payroll Status & Batch Metadata Bar */}
+            <div className="admin-payroll-status-bar">
+              <div className="admin-payroll-status-left">
+                <span
+                  className={`admin-status-badge status-${
+                    (payroll?.status || '').toLowerCase() === 'completed' || (payroll?.status || '').toLowerCase() === 'processed' || (payroll?.status || '').toLowerCase() === 'paid'
+                      ? 'active'
+                      : 'pending'
+                  }`}
+                >
+                  <span className="status-dot" aria-hidden="true"></span>
+                  Status: {payroll?.status || 'Processed'}
+                </span>
+                <span className="admin-payroll-meta-tag">
+                  Period: {payroll?.month_name || selectedMonthName} {payroll?.year || selectedYear}
+                </span>
+                {payroll?.batch?.batch_id && (
+                  <span className="admin-payroll-batch-tag" title={`Batch ID: ${payroll.batch.batch_id}`}>
+                    Batch: {payroll.batch.batch_id.slice(0, 8)}&hellip;
+                  </span>
+                )}
+              </div>
+              <div className="admin-payroll-status-right">
+                <span className="admin-payroll-payslip-count-tag">
+                  {payroll?.total_records ?? 0} {payroll?.total_records === 1 ? 'Employee' : 'Employees'} Processed
+                  {payroll?.payslips_count > 0 && ` \u2022 ${payroll.payslips_count} Payslips Available`}
+                </span>
+              </div>
+            </div>
+
+            {/* Metrics 3-col */}
             <div className="admin-metrics-3col">
               <div className="admin-metric-box">
                 <span className="admin-metric-label">Processed</span>
@@ -530,9 +686,10 @@ function Dashboard() {
               </div>
             </div>
 
+            {/* Financial Totals Grid */}
             <div className="admin-financial-grid">
               <div className="admin-financial-card">
-                <span className="admin-financial-lbl">Total Gross Salary</span>
+                <span className="admin-financial-lbl">Total Gross Payroll</span>
                 <span className="admin-financial-val">{formatCurrency(payroll?.gross_salary)}</span>
               </div>
 
@@ -544,10 +701,127 @@ function Dashboard() {
               </div>
 
               <div className="admin-financial-card net-salary-card">
-                <span className="admin-financial-lbl">Total Net Salary</span>
+                <span className="admin-financial-lbl">Total Net Payroll</span>
                 <span className="admin-financial-val">{formatCurrency(payroll?.net_salary)}</span>
               </div>
             </div>
+
+            {/* Available Generated Payslips Table */}
+            {Array.isArray(payroll?.payslips) && payroll.payslips.length > 0 && (
+              <div className="admin-payroll-payslips-block">
+                <div className="admin-payroll-payslips-header">
+                  <div>
+                    <h3 className="admin-payroll-payslips-title">
+                      Generated Payslips &mdash; {selectedMonthName} {selectedYear}
+                    </h3>
+                    <p className="admin-payroll-payslips-subtitle">
+                      Access and download issued payslip documents for employees in this period
+                    </p>
+                  </div>
+                  <span className="admin-badge admin-badge-neutral">
+                    {payroll.payslips.length} {payroll.payslips.length === 1 ? 'Payslip' : 'Payslips'}
+                  </span>
+                </div>
+
+                <div className="admin-table-container">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Employee Name</th>
+                        <th scope="col">Employee ID</th>
+                        <th scope="col">Department &amp; Designation</th>
+                        <th scope="col">Net Salary</th>
+                        <th scope="col">Payslip Status</th>
+                        <th scope="col" className="text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payroll.payslips.map((p) => {
+                        const isDownloading = downloadingId === p.document_id;
+                        return (
+                          <tr key={p.employee_id}>
+                            <td>
+                              <span className="admin-user-name-strong">{p.employee_name}</span>
+                            </td>
+                            <td>
+                              <span className="admin-id-badge">{p.employee_id}</span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                <span className="admin-dept-tag">{p.department || 'General'}</span>
+                                <span className="text-muted" style={{ fontSize: '0.75rem' }}>{p.designation || '—'}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <span style={{ fontWeight: 700, color: '#15803d' }}>
+                                {formatCurrency(p.net_salary)}
+                              </span>
+                            </td>
+                            <td>
+                              {p.has_payslip && p.is_file_available ? (
+                                <span className="admin-payslip-ready-badge" title="Payslip document is ready on disk">
+                                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                  Ready
+                                </span>
+                              ) : p.has_payslip ? (
+                                <span className="admin-payslip-pending-badge" title="Record created but document file not found">
+                                  Missing File
+                                </span>
+                              ) : (
+                                <span className="admin-payslip-pending-badge">
+                                  Pending
+                                </span>
+                              )}
+                            </td>
+                            <td className="text-right">
+                              <div className="admin-payroll-row-actions">
+                                <button
+                                  type="button"
+                                  className="admin-action-btn-sm admin-btn-view"
+                                  disabled={!p.document_id || !p.is_file_available}
+                                  onClick={() => handleViewPayslip(p.document_id, p.employee_id)}
+                                  title={p.is_file_available ? 'View payslip PDF in new tab' : 'Payslip file unavailable'}
+                                  aria-label={`View payslip for ${p.employee_name}`}
+                                >
+                                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                    <circle cx="12" cy="12" r="3" />
+                                  </svg>
+                                  View
+                                </button>
+                                <button
+                                  type="button"
+                                  className="admin-action-btn-sm admin-btn-download"
+                                  disabled={!p.document_id || !p.is_file_available || isDownloading}
+                                  onClick={() => handleDownloadPayslip(p.document_id, p.file_name, p.employee_id)}
+                                  title={p.is_file_available ? 'Download payslip PDF' : 'Payslip file unavailable'}
+                                  aria-label={`Download payslip for ${p.employee_name}`}
+                                >
+                                  {isDownloading ? (
+                                    <svg className="admin-state-spinner" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="12" />
+                                    </svg>
+                                  ) : (
+                                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                      <polyline points="7 10 12 15 17 10" />
+                                      <line x1="12" y1="15" x2="12" y2="3" />
+                                    </svg>
+                                  )}
+                                  Download
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </>
         )}
       </section>
@@ -739,7 +1013,7 @@ function Dashboard() {
                     Happy Birthday, {b.employee_name}!
                   </span>
                   <span className="admin-birthday-today-sub">
-                    Today · {b.department || 'General'} · {b.designation || 'Staff'} ({b.employee_id})
+                    Today · {b.department || 'General'} · {b.designation || '—'} ({b.employee_id})
                   </span>
                 </div>
               ))}

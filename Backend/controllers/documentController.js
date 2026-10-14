@@ -493,7 +493,8 @@ const getAdminDocuments = async (req, res, next) => {
         d.file_name,
         d.month,
         d.year,
-        d.created_at
+        d.created_at,
+        d.storage_key
       FROM public.documents d
       LEFT JOIN public.employees e ON e.employee_id = d.employee_id
       ${whereClause}
@@ -504,9 +505,27 @@ const getAdminDocuments = async (req, res, next) => {
     const dataResult = await pool.query(dataQuery, dataQueryParams);
     const totalPages = Math.ceil(total / limit) || 1;
 
+    const documentsWithAvailability = await Promise.all(
+      (dataResult.rows || []).map(async (row) => {
+        let isAvailable = false;
+        try {
+          isAvailable = Boolean(row.storage_key && (await storageService.fileExists(row.storage_key)));
+        } catch (_) {
+          isAvailable = false;
+        }
+        const { storage_key, ...safeDoc } = row;
+        return {
+          ...safeDoc,
+          is_file_available: isAvailable,
+          file_available: isAvailable,
+          status: isAvailable ? 'Available' : 'Unavailable',
+        };
+      })
+    );
+
     return res.status(200).json({
       success: true,
-      data: dataResult.rows,
+      data: documentsWithAvailability,
       pagination: {
         page,
         limit,
@@ -520,12 +539,90 @@ const getAdminDocuments = async (req, res, next) => {
 };
 
 /**
+ * Controller to fetch all documents for a specific employee with employee validation.
+ * Endpoint: GET /api/admin/employees/:employeeId/documents
+ */
+const getAdminEmployeeDocuments = async (req, res, next) => {
+  try {
+    const { employeeId } = req.params;
+
+    if (!employeeId || typeof employeeId !== 'string' || !employeeId.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or missing employee ID parameter.',
+      });
+    }
+
+    const cleanEmpId = employeeId.trim();
+
+    // 1. Verify employee exists in public.employees
+    const empResult = await pool.query(
+      `SELECT employee_id, first_name, last_name, email, department, designation, status
+       FROM public.employees
+       WHERE employee_id = $1`,
+      [cleanEmpId]
+    );
+
+    if (empResult.rowCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found',
+      });
+    }
+
+    const employee = empResult.rows[0];
+
+    // 2. Fetch documents strictly scoped to this employee
+    const docsResult = await pool.query(
+      `SELECT id, employee_id, document_type, file_name, month, year, created_at, storage_key
+       FROM public.documents
+       WHERE employee_id = $1
+       ORDER BY created_at DESC`,
+      [cleanEmpId]
+    );
+
+    // 3. Check physical file existence without exposing storage_key
+    const documentsWithAvailability = await Promise.all(
+      (docsResult.rows || []).map(async (doc) => {
+        let isAvailable = false;
+        try {
+          isAvailable = Boolean(doc.storage_key && (await storageService.fileExists(doc.storage_key)));
+        } catch (_) {
+          isAvailable = false;
+        }
+        return {
+          id: doc.id,
+          employee_id: doc.employee_id,
+          document_type: doc.document_type,
+          file_name: doc.file_name,
+          month: doc.month,
+          year: doc.year,
+          created_at: doc.created_at,
+          is_file_available: isAvailable,
+          file_available: isAvailable,
+          status: isAvailable ? 'Available' : 'Unavailable',
+        };
+      })
+    );
+
+    return res.status(200).json({
+      success: true,
+      employee,
+      data: documentsWithAvailability,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Controller for administrators to securely download any employee document.
  * Endpoint: GET /api/admin/documents/:documentId/download
  */
 const downloadAdminDocument = async (req, res, next) => {
   try {
     const { documentId } = req.params;
+    const employee_id = req.params.employeeId || req.query.employee_id || req.query.employeeId;
 
     // Validate UUID format
     if (!documentId || !UUID_REGEX.test(documentId)) {
@@ -536,7 +633,7 @@ const downloadAdminDocument = async (req, res, next) => {
     }
 
     // 1. Retrieve document metadata
-    const query = `
+    let query = `
       SELECT
         id,
         employee_id,
@@ -546,8 +643,14 @@ const downloadAdminDocument = async (req, res, next) => {
       FROM public.documents
       WHERE id = $1
     `;
+    const params = [documentId];
 
-    const result = await pool.query(query, [documentId]);
+    if (employee_id && String(employee_id).trim()) {
+      params.push(String(employee_id).trim());
+      query += ` AND employee_id = $2`;
+    }
+
+    const result = await pool.query(query, params);
 
     if (result.rowCount === 0) {
       return res.status(404).json({
@@ -595,7 +698,8 @@ const downloadAdminDocument = async (req, res, next) => {
     const sanitizedFilename = rawBaseName || 'document';
 
     // 5. Set headers and stream response
-    const disposition = req.query.inline === 'true' ? 'inline' : 'attachment';
+    const isInline = req.query.inline === 'true' || (req.originalUrl && req.originalUrl.includes('/view'));
+    const disposition = isInline ? 'inline' : 'attachment';
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `${disposition}; filename="${sanitizedFilename}"`);
     res.setHeader('Content-Length', fileBuffer.length);
@@ -628,12 +732,20 @@ const deleteAdminDocument = async (req, res, next) => {
     }
 
     // 1. Find document metadata
-    const findQuery = `
-      SELECT id, storage_key, file_name
+    let findQuery = `
+      SELECT id, employee_id, document_type, storage_key, file_name, month, year
       FROM public.documents
       WHERE id = $1
     `;
-    const findResult = await pool.query(findQuery, [documentId]);
+    const params = [documentId];
+
+    const employee_id = req.params.employeeId || req.query.employee_id || req.query.employeeId;
+    if (employee_id && String(employee_id).trim()) {
+      params.push(String(employee_id).trim());
+      findQuery += ` AND employee_id = $2`;
+    }
+
+    const findResult = await pool.query(findQuery, params);
 
     if (findResult.rowCount === 0) {
       return res.status(404).json({
@@ -644,10 +756,38 @@ const deleteAdminDocument = async (req, res, next) => {
 
     const doc = findResult.rows[0];
 
-    // 2. Delete physical file from storage
+    // 2. Protect related records and enforce statutory retention policy
+    const docTypeLower = (doc.document_type || '').trim().toLowerCase();
+
+    // Prevent deletion of historically issued payslips (statutory retention compliance)
+    if (docTypeLower === 'payslip' || docTypeLower === 'salary slip') {
+      return res.status(400).json({
+        success: false,
+        message: 'Historically issued payslips are subject to the statutory 8-year compliance retention policy and cannot be permanently deleted.',
+      });
+    }
+
+    // Prevent deletion if document is linked to an official employee exit settlement record
+    const exitCheck = await pool.query(
+      `SELECT id, status FROM public.fnf_settlements
+       WHERE settlement_document_id = $1 OR relieving_document_id = $1 OR experience_document_id = $1
+       LIMIT 1`,
+      [documentId]
+    );
+
+    if (exitCheck.rowCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'This document is linked to an official employee exit settlement record and cannot be deleted.',
+      });
+    }
+
+    // 3. Delete physical file from private storage
     // If the file is already missing on disk, deleteFile cleanly returns false without throwing.
     try {
-      await storageService.deleteFile(doc.storage_key);
+      if (doc.storage_key) {
+        await storageService.deleteFile(doc.storage_key);
+      }
     } catch (storageErr) {
       console.error('Failed to delete physical file from storage:', storageErr.message);
       return res.status(500).json({
@@ -656,10 +796,10 @@ const deleteAdminDocument = async (req, res, next) => {
       });
     }
 
-    // 3. Delete metadata record from PostgreSQL
+    // 4. Delete metadata record from PostgreSQL
     await pool.query('DELETE FROM public.documents WHERE id = $1', [documentId]);
 
-    // Audit log document deletion
+    // 5. Audit log document deletion
     recordAuditLog({
       action: 'DOCUMENT_DELETE',
       entityType: 'DOCUMENT',
@@ -686,6 +826,7 @@ module.exports = {
   downloadEmployeeDocument,
   uploadDocument,
   getAdminDocuments,
+  getAdminEmployeeDocuments,
   downloadAdminDocument,
   deleteAdminDocument,
 };

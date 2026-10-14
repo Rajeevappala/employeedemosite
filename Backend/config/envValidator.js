@@ -30,16 +30,32 @@ function validateEnvironment() {
       weak.push('OTP_SECRET (must be at least 16 characters in production)');
     }
 
+    // Ensure JWT_SECRET and OTP_SECRET are independent and not identical
+    if (
+      process.env.JWT_SECRET &&
+      otpSecret &&
+      process.env.JWT_SECRET.trim() === otpSecret.trim()
+    ) {
+      weak.push('JWT_SECRET and OTP_SECRET must be independently generated and cannot be identical');
+    }
+
     if (!process.env.CORS_ORIGIN || !process.env.CORS_ORIGIN.trim()) {
       missing.push('CORS_ORIGIN (explicit allowed origins required in production)');
     }
   } else {
     // Development guidance
-    if (!process.env.JWT_SECRET) {
+    if (!process.env.JWT_SECRET || !process.env.JWT_SECRET.trim()) {
       console.warn('⚠️  [SECURITY WARNING] JWT_SECRET is not configured in .env. A fallback development secret is being used. DO NOT USE IN PRODUCTION.');
     }
-    if (!process.env.OTP_SECRET && !process.env.SESSION_SECRET) {
+    if ((!process.env.OTP_SECRET || !process.env.OTP_SECRET.trim()) && (!process.env.SESSION_SECRET || !process.env.SESSION_SECRET.trim())) {
       console.warn('⚠️  [SECURITY WARNING] OTP_SECRET is not configured in .env. A fallback development salt is being used. DO NOT USE IN PRODUCTION.');
+    }
+    if (
+      process.env.JWT_SECRET &&
+      process.env.OTP_SECRET &&
+      process.env.JWT_SECRET.trim() === process.env.OTP_SECRET.trim()
+    ) {
+      console.warn('⚠️  [SECURITY WARNING] JWT_SECRET and OTP_SECRET should be independently generated and distinct.');
     }
   }
 

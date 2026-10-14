@@ -2,16 +2,19 @@ const crypto = require('crypto');
 
 const getJwtSecret = () => {
   const secret = process.env.JWT_SECRET || process.env.SESSION_SECRET;
-  if (!secret) {
+  if (!secret || !secret.trim()) {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('JWT_SECRET must be configured in production environment.');
     }
     return 'dev_secret_employee_portal_session_key_2026';
   }
-  return secret;
+  if (process.env.NODE_ENV === 'production' && secret.trim().length < 32) {
+    throw new Error('JWT_SECRET must be at least 32 characters in production environment.');
+  }
+  return secret.trim();
 };
 
-const DEFAULT_EXPIRATION_SECONDS = parseInt(process.env.JWT_EXPIRES_IN, 10) || 24 * 60 * 60; // 24 hours
+const DEFAULT_EXPIRATION_SECONDS = parseInt(process.env.JWT_EXPIRES_IN, 10) || 12 * 60 * 60; // 12 hours (43200 seconds)
 
 /**
  * Encodes a string or object into Base64URL format.

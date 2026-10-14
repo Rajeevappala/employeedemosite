@@ -2,6 +2,13 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 
+let pool = null;
+try {
+  pool = require('../config/database');
+} catch (_) {
+  // DB connection optional for unit tests
+}
+
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
@@ -194,6 +201,97 @@ function getMonthName(monthNumber) {
 }
 
 /**
+ * Safely formats date string or Date object to DD-MMM-YYYY (e.g. 01-Jan-2024).
+ */
+function formatDate(dateInput) {
+  if (!dateInput) return 'Not configured';
+  try {
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return String(dateInput);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = MONTH_NAMES[d.getMonth()] ? MONTH_NAMES[d.getMonth()].slice(0, 3) : 'Jan';
+    const year = d.getFullYear();
+    return `${day}-${month}-${year}`;
+  } catch {
+    return 'Not configured';
+  }
+}
+
+/**
+ * Converts numeric amount into Indian numbering English words
+ * (e.g. 37500 -> "Thirty Seven Thousand Five Hundred Rupees Only")
+ */
+function numberToWordsINR(amount) {
+  const num = typeof amount === 'number' ? amount : parseFloat(amount);
+  if (isNaN(num)) return 'Zero Rupees Only';
+
+  const absNum = Math.abs(num);
+  const rupees = Math.floor(absNum);
+  const paise = Math.round((absNum - rupees) * 100);
+
+  if (rupees === 0 && paise === 0) {
+    return 'Zero Rupees Only';
+  }
+
+  const ones = [
+    '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+    'Seventeen', 'Eighteen', 'Nineteen'
+  ];
+  const tens = [
+    '', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'
+  ];
+
+  function convertTwoDigits(n) {
+    if (n === 0) return '';
+    if (n < 20) return ones[n];
+    const t = Math.floor(n / 10);
+    const o = n % 10;
+    return tens[t] + (o > 0 ? ' ' + ones[o] : '');
+  }
+
+  function convertThreeDigits(n) {
+    const h = Math.floor(n / 100);
+    const r = n % 100;
+    let res = '';
+    if (h > 0) {
+      res += ones[h] + ' Hundred';
+      if (r > 0) res += ' ';
+    }
+    if (r > 0) {
+      res += convertTwoDigits(r);
+    }
+    return res;
+  }
+
+  const crore = Math.floor(rupees / 10000000);
+  let rem = rupees % 10000000;
+  const lakh = Math.floor(rem / 100000);
+  rem = rem % 100000;
+  const thousand = Math.floor(rem / 1000);
+  rem = rem % 1000;
+  const hundredAndBelow = rem;
+
+  const words = [];
+  if (crore > 0) words.push(convertThreeDigits(crore) + ' Crore');
+  if (lakh > 0) words.push(convertTwoDigits(lakh) + ' Lakh');
+  if (thousand > 0) words.push(convertTwoDigits(thousand) + ' Thousand');
+  if (hundredAndBelow > 0) words.push(convertThreeDigits(hundredAndBelow));
+
+  let result = words.length > 0 ? words.join(' ') + ' Rupees' : '';
+  if (paise > 0) {
+    const paiseWords = convertTwoDigits(paise) + ' Paise';
+    if (result) {
+      result += ' and ' + paiseWords;
+    } else {
+      result = paiseWords;
+    }
+  }
+
+  return (result + ' Only').trim();
+}
+
+/**
  * Registers bundled Unicode fonts in PDFKit to guarantee native rendering
  * of the Indian Rupee symbol (₹ / U+20B9) across all PDF viewers and operating systems.
  *
@@ -226,47 +324,153 @@ function configurePdfFonts(doc) {
 }
 
 /**
- * Generates a clean, professional payslip PDF buffer.
+ * Enriches payslip data with database records if not already supplied.
+ * Gracefully defaults if database is not reachable.
+ */
+async function enrichPayslipData({ employee, payroll, pfDetails, bankDetails }) {
+  const enriched = {
+    employee: { ...employee },
+    payroll: { ...payroll },
+    pfDetails: pfDetails ? { ...pfDetails } : null,
+    bankDetails: bankDetails ? { ...bankDetails } : null,
+    companyAddress: 'Plot 42, Hitech City Phase 2, Cyber Towers 5th Floor, Hyderabad, Telangana - 500081, India',
+    companyLegalName: 'GaintPro Software Technologies Private Limited',
+  };
+
+  if (!pool || !employee?.employee_id) {
+    return enriched;
+  }
+
+  try {
+    const empId = employee.employee_id;
+
+    // 1. Enrich employee fields if date_of_joining or work_location missing
+    if (!enriched.employee.date_of_joining || !enriched.employee.work_location) {
+      const empRes = await pool.query(
+        `SELECT date_of_joining, work_location, first_name, last_name, designation, department, status
+         FROM public.employees
+         WHERE employee_id = $1 LIMIT 1`,
+        [empId]
+      );
+      if (empRes.rows.length > 0) {
+        const dbEmp = empRes.rows[0];
+        if (!enriched.employee.date_of_joining) enriched.employee.date_of_joining = dbEmp.date_of_joining;
+        if (!enriched.employee.work_location) enriched.employee.work_location = dbEmp.work_location;
+        if (!enriched.employee.first_name) enriched.employee.first_name = dbEmp.first_name;
+        if (!enriched.employee.last_name) enriched.employee.last_name = dbEmp.last_name;
+        if (!enriched.employee.designation) enriched.employee.designation = dbEmp.designation;
+        if (!enriched.employee.department) enriched.employee.department = dbEmp.department;
+      }
+    }
+
+    // 2. Enrich Bank Details if not provided
+    if (!enriched.bankDetails) {
+      const bankRes = await pool.query(
+        `SELECT bank_name, account_number_last4, branch_name, ifsc_code, account_type
+         FROM public.employee_bank_details
+         WHERE employee_id = $1 LIMIT 1`,
+        [empId]
+      );
+      if (bankRes.rows.length > 0) {
+        enriched.bankDetails = bankRes.rows[0];
+      }
+    }
+
+    // 3. Enrich PF Details if not provided
+    if (!enriched.pfDetails) {
+      const pfRes = await pool.query(
+        `SELECT uan_number, pf_number
+         FROM public.pf_details
+         WHERE employee_id = $1 LIMIT 1`,
+        [empId]
+      );
+      if (pfRes.rows.length > 0) {
+        enriched.pfDetails = pfRes.rows[0];
+      }
+    }
+
+    // 4. Enrich Organization Settings
+    const orgRes = await pool.query(
+      `SELECT legal_name, organization_name, address_line_1, address_line_2, city, state, postal_code, country
+       FROM public.organization_settings LIMIT 1`
+    );
+    if (orgRes.rows.length > 0) {
+      const org = orgRes.rows[0];
+      if (org.legal_name) enriched.companyLegalName = org.legal_name;
+      const addrParts = [
+        org.address_line_1,
+        org.address_line_2,
+        org.city,
+        `${org.state}${org.postal_code ? ' - ' + org.postal_code : ''}`,
+        org.country,
+      ].filter(Boolean);
+      if (addrParts.length > 0) {
+        enriched.companyAddress = addrParts.join(', ');
+      }
+    }
+  } catch (_) {
+    // Graceful fallback to default/passed values
+  }
+
+  return enriched;
+}
+
+/**
+ * Generates a clean, professional corporate payslip PDF buffer.
  *
- * Features:
+ * Traditional Corporate Layout:
+ * - A4 portrait page layout, print-friendly white background with black text and thin 0.5pt black borders.
+ * - Formal header with official GaintPro logo, registered company address, and clear PAYSLIP title.
+ * - Compact 4-column bordered employee information table with actual values and 'Not configured' fallbacks.
+ * - Side-by-side bordered Earnings and Deductions tables with right-aligned Indian Rupee figures.
+ * - Prominent summary displaying Gross Earnings, Total Deductions, Net Pay, and exact Amount in Words.
  * - Full Unicode font embedding (Noto Sans) for pristine ₹ (U+20B9) rendering.
- * - Consistent Indian currency formatting on all salary and deduction fields.
  * - Automated loading and aspect-ratio-preserved embedding of genuine company signature and office stamp.
- * - Safe validation preventing silent generation of signed payslips without genuine authorization assets.
- * - Test / Preview mode for layout verification before live payroll generation.
+ * - Subtle GaintPro watermark and confidentiality footer notice.
  *
  * @param {Object} params
  * @param {Object} params.employee Employee record from public.employees
  * @param {Object} params.payroll Finalized payroll record from public.payroll_records
  * @param {Object} [params.pfDetails] Optional PF details from public.pf_details
+ * @param {Object} [params.bankDetails] Optional bank details from public.employee_bank_details
  * @param {boolean} [params.isPreview=false] When true, allows generating preview draft layout even if real assets are missing
- * @param {boolean} [params.requireAssets] Override whether genuine assets are strictly required (defaults to env PAYSLIP_REQUIRE_ASSETS === 'true')
+ * @param {boolean} [params.requireAssets] Override whether genuine assets are strictly required
  * @returns {Promise<Buffer>} Resolves to the generated PDF buffer
  */
-function generatePayslipPdf({ employee, payroll, pfDetails, isPreview = false, requireAssets }) {
+async function generatePayslipPdf({ employee, payroll, pfDetails, bankDetails, isPreview = false, requireAssets }) {
+  const assetStatus = checkAuthorizationAssets();
+  const shouldStrictlyRequireAssets = typeof requireAssets === 'boolean'
+    ? requireAssets
+    : (!isPreview && process.env.PAYSLIP_REQUIRE_ASSETS === 'true');
+
+  if (shouldStrictlyRequireAssets && !assetStatus.isComplete) {
+    const missingLabels = assetStatus.missing.map(m => `${m.label} (${m.reason}: ${m.path})`).join('; ');
+    throw new MissingPayslipAssetsError(
+      `Official payslip cannot be generated: Required company authorization asset(s) are missing or unreadable. [${missingLabels}]. Please configure genuine PNG assets before issuing official signed payslips.`,
+      assetStatus.missing
+    );
+  }
+
+  // Enrich data from database if available
+  const data = await enrichPayslipData({ employee, payroll, pfDetails, bankDetails });
+  const emp = data.employee;
+  const pay = data.payroll;
+  const pf = data.pfDetails;
+  const bank = data.bankDetails;
+
   return new Promise((resolve, reject) => {
     try {
-      const assetStatus = checkAuthorizationAssets();
-      const shouldStrictlyRequireAssets = typeof requireAssets === 'boolean'
-        ? requireAssets
-        : (!isPreview && process.env.PAYSLIP_REQUIRE_ASSETS === 'true');
-
-      // Requirement 2.9: Safely reject if official signing requested but genuine assets are unavailable
-      if (shouldStrictlyRequireAssets && !assetStatus.isComplete) {
-        const missingLabels = assetStatus.missing.map(m => `${m.label} (${m.reason}: ${m.path})`).join('; ');
-        throw new MissingPayslipAssetsError(
-          `Official payslip cannot be generated: Required company authorization asset(s) are missing or unreadable. [${missingLabels}]. Please configure genuine PNG assets before issuing official signed payslips.`,
-          assetStatus.missing
-        );
-      }
+      const monthStr = getMonthName(pay.month);
+      const periodStr = `${monthStr} ${pay.year}`;
+      const employeeId = emp.employee_id || pay.employee_id || 'Not configured';
 
       const doc = new PDFDocument({
         size: 'A4',
-        margin: 40,
+        margin: 36,
         compress: false,
         info: {
-          Title: `Payslip - ${employee.employee_id} - ${getMonthName(payroll.month)} ${payroll.year}`,
-          Author: 'GaintPro Software Technologies',
+          Title: `Payslip - ${employeeId} - ${periodStr}`,
+          Author: 'GaintPro Software Technologies Private Limited',
           Subject: 'Monthly Salary Payslip',
           Creator: 'GaintPro Payroll System',
         },
@@ -282,321 +486,364 @@ function generatePayslipPdf({ employee, payroll, pfDetails, isPreview = false, r
       });
       doc.on('error', (err) => reject(err));
 
-      const pageWidth = doc.page.width; // 595.28 for A4
-      const margin = 40;
-      const contentWidth = pageWidth - margin * 2; // 515.28
-
-      // Curated corporate palette
-      const darkColor = '#0F172A';
-      const slateColor = '#1E293B';
-      const mutedColor = '#64748B';
-      const borderColor = '#CBD5E1';
-      const lightBg = '#F8FAFC';
-      const greenColor = '#15803D';
-
-      let y = margin;
+      const pageWidth = doc.page.width; // 595.28
+      const pageHeight = doc.page.height; // 841.89
+      const margin = 36;
+      const contentWidth = pageWidth - margin * 2; // 523.28
 
       // =======================================================================
-      // 1. HEADER / ORGANIZATION TITLE & LOGO
+      // 0. SUBTLE WATERMARK (Rendered in background before foreground text)
       // =======================================================================
-      const headerHeight = 75;
-      doc.rect(margin, y, contentWidth, headerHeight).fill(slateColor);
-
       const logoPath = getCompanyLogoPath();
-      let hasLogo = false;
-      const logoBoxSize = 51;
-      const logoBoxX = margin + 12;
-      const logoBoxY = y + 12;
-
-      if (logoPath) {
+      if (logoPath && fs.existsSync(logoPath)) {
         try {
-          // Draw clean rounded tile to frame the logo crisply against dark slate background
-          doc.roundedRect(logoBoxX, logoBoxY, logoBoxSize, logoBoxSize, 6).fill('#FFFFFF');
-          // Embed genuine company logo with preserved aspect ratio
-          doc.image(logoPath, logoBoxX + 2, logoBoxY + 2, {
-            fit: [47, 47],
-            align: 'center',
+          doc.save();
+          doc.opacity(0.04);
+          const wmWidth = 260;
+          const wmX = (pageWidth - wmWidth) / 2;
+          const wmY = (pageHeight - 120) / 2;
+          doc.image(logoPath, wmX, wmY, { width: wmWidth, align: 'center' });
+          doc.restore();
+        } catch (_) {
+          // Watermark non-fatal
+        }
+      }
+
+      let y = 30;
+
+      // =======================================================================
+      // 1. COMPANY HEADER (Logo, Company Name, Official Registered Address)
+      // =======================================================================
+      let logoRendered = false;
+      if (logoPath && fs.existsSync(logoPath)) {
+        try {
+          doc.image(logoPath, margin, y, {
+            fit: [125, 48],
+            align: 'left',
             valign: 'center',
           });
-          hasLogo = true;
+          logoRendered = true;
         } catch (logoErr) {
           console.error(`Failed to embed company logo from ${logoPath}:`, logoErr.message);
         }
-      } else {
-        console.warn('Company logo asset not found; rendering text-only header.');
       }
 
-      const textX = hasLogo ? (logoBoxX + logoBoxSize + 14) : (margin + 15);
-      const titleWidth = hasLogo
-        ? (contentWidth - (textX - margin) - 120)
-        : (contentWidth - 150);
+      const headerTextX = logoRendered ? (margin + 135) : margin;
+      const headerTextWidth = pageWidth - margin - headerTextX;
 
-      doc.fillColor('#FFFFFF')
-        .font(boldFont)
-        .fontSize(hasLogo ? 15 : 18)
-        .text('GAINTPRO SOFTWARE TECHNOLOGIES', textX, y + 16, {
-          width: titleWidth,
-          align: 'left',
-        });
-
-      doc.fillColor('#94A3B8')
-        .font(regularFont)
-        .fontSize(hasLogo ? 10 : 11)
-        .text('SALARY SLIP / PAYSLIP', textX, y + 42, {
-          width: 250,
-          align: 'left',
-        });
-
-      const periodStr = `${getMonthName(payroll.month)} ${payroll.year}`;
-      doc.fillColor('#F8FAFC')
-        .font(boldFont)
-        .fontSize(10.5)
-        .text(`Period: ${periodStr}`, margin + 15, y + 42, {
-          width: contentWidth - 30,
+      doc.font(boldFont).fontSize(10.5).fillColor('#000000')
+        .text('GAINTPRO SOFTWARE TECHNOLOGIES PRIVATE LIMITED', headerTextX, y + 2, {
+          width: headerTextWidth,
           align: 'right',
         });
 
-      // Subtle preview draft badge if in preview mode
+      doc.font(regularFont).fontSize(7.5).fillColor('#333333')
+        .text(data.companyAddress, headerTextX, y + 18, {
+          width: headerTextWidth,
+          align: 'right',
+        });
+
+      doc.font(regularFont).fontSize(7.5).fillColor('#333333')
+        .text('Email: contact@gaintpro.com  |  Tel: +91 9876543210  |  Web: https://www.gaintprosoftwaretechnologies.com/', headerTextX, y + 30, {
+          width: headerTextWidth,
+          align: 'right',
+        });
+
+      y += 54;
+
+      // Divider line
+      doc.moveTo(margin, y).lineTo(margin + contentWidth, y).lineWidth(0.75).strokeColor('#000000').stroke();
+      y += 6;
+
+      // Title Bar
+      const titleBarHeight = 22;
+      doc.rect(margin, y, contentWidth, titleBarHeight).fillAndStroke('#F1F5F9', '#000000').lineWidth(0.5);
+
+      doc.font(boldFont).fontSize(10).fillColor('#000000')
+        .text(`PAYSLIP FOR THE MONTH OF ${monthStr.toUpperCase()} ${pay.year}`, margin, y + 6, {
+          width: contentWidth,
+          align: 'center',
+        });
+
       if (isPreview) {
-        doc.fillColor('#FCD34D')
-          .font(boldFont)
-          .fontSize(8)
-          .text('[ PREVIEW DRAFT - LAYOUT VERIFICATION ONLY ]', margin + 15, y + 57, {
-            width: contentWidth - 30,
+        doc.font(boldFont).fontSize(7).fillColor('#D97706')
+          .text('[ PREVIEW DRAFT ]', margin, y + 7, {
+            width: contentWidth - 8,
             align: 'right',
           });
       }
 
-      y += 85;
+      y += titleBarHeight + 8;
 
       // =======================================================================
-      // 2. EMPLOYEE DETAILS & ATTENDANCE BOX
+      // 2. EMPLOYEE INFORMATION TABLE (Compact 4-column bordered grid)
       // =======================================================================
-      const empBoxHeight = 85;
-      doc.rect(margin, y, contentWidth, empBoxHeight)
-        .lineWidth(1)
-        .strokeColor(borderColor)
-        .fillAndStroke(lightBg, borderColor);
+      const employeeName = ((emp.first_name || emp.last_name)
+        ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim()
+        : (emp.employee_name || emp.name || 'Employee'));
+      const designation = emp.designation || 'Associate';
+      const department = emp.department || 'General';
+      const dateOfJoining = formatDate(emp.date_of_joining);
+      const workLocation = emp.work_location || 'Not configured';
 
-      const col1X = margin + 15;
-      const col2X = margin + 180;
-      const col3X = margin + 350;
+      const bankName = bank?.bank_name || 'Not configured';
+      const bankAccountNo = bank?.account_number_last4 ? `XXXX-XXXX-${bank.account_number_last4}` : 'Not configured';
+      const pan = emp.pan || emp.pan_number || 'Not configured';
+      const uan = pf?.uan_number || 'Not configured';
+      const pfNumber = pf?.pf_number || 'Not configured';
 
-      const employeeName = `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || employee.employee_name || 'Employee';
-      const employeeId = employee.employee_id || payroll.employee_id;
-      const designation = employee.designation || 'Staff';
-      const department = employee.department || 'General';
+      const workingDays = pay.working_days !== null && pay.working_days !== undefined ? Number(pay.working_days) : 0;
+      const payableDays = pay.payable_days !== null && pay.payable_days !== undefined ? Number(pay.payable_days) : 0;
+      const paidDaysStr = payableDays.toFixed(2);
+      const lopDaysStr = (pay.loss_of_pay_days !== undefined && pay.loss_of_pay_days !== null)
+        ? Number(pay.loss_of_pay_days).toFixed(2)
+        : Math.max(0, workingDays - payableDays).toFixed(2);
 
-      const workingDays = payroll.working_days !== null && payroll.working_days !== undefined
-        ? Number(payroll.working_days)
-        : '-';
-      const payableDays = payroll.payable_days !== null && payroll.payable_days !== undefined
-        ? Number(payroll.payable_days)
-        : '-';
+      const empTableY = y;
+      const empRowHeight = 17.5;
+      const labelColWidth = 95;
+      const valColWidth = (contentWidth / 2) - labelColWidth; // 166.64
 
-      // Row 1
-      doc.font(boldFont).fontSize(9).fillColor(mutedColor).text('EMPLOYEE ID', col1X, y + 12);
-      doc.font(boldFont).fontSize(10).fillColor(darkColor).text(employeeId, col1X, y + 24);
+      const empGrid = [
+        [
+          { label: 'Employee ID', value: employeeId },
+          { label: 'Employee Name', value: employeeName },
+        ],
+        [
+          { label: 'Designation', value: designation },
+          { label: 'Department', value: department },
+        ],
+        [
+          { label: 'Date of Joining', value: dateOfJoining },
+          { label: 'Work Location', value: workLocation },
+        ],
+        [
+          { label: 'Bank Name', value: bankName },
+          { label: 'Bank Account No.', value: bankAccountNo },
+        ],
+        [
+          { label: 'PAN', value: pan },
+          { label: 'UAN Number', value: uan },
+        ],
+        [
+          { label: 'PF Number', value: pfNumber },
+          { label: 'Payroll Month', value: periodStr },
+        ],
+        [
+          { label: 'Paid Days', value: paidDaysStr },
+          { label: 'Loss of Pay (LOP) Days', value: lopDaysStr },
+        ],
+      ];
 
-      doc.font(boldFont).fontSize(9).fillColor(mutedColor).text('EMPLOYEE NAME', col2X, y + 12);
-      doc.font(boldFont).fontSize(10).fillColor(darkColor).text(employeeName, col2X, y + 24);
+      for (let r = 0; r < empGrid.length; r++) {
+        const rowY = empTableY + r * empRowHeight;
 
-      doc.font(boldFont).fontSize(9).fillColor(mutedColor).text('TOTAL WORKING DAYS', col3X, y + 12);
-      doc.font(boldFont).fontSize(10).fillColor(darkColor).text(String(workingDays), col3X, y + 24);
+        // Tint label columns with crisp light neutral
+        doc.rect(margin, rowY, labelColWidth, empRowHeight).fill('#F8FAFC');
+        doc.rect(margin + labelColWidth + valColWidth, rowY, labelColWidth, empRowHeight).fill('#F8FAFC');
 
-      // Row 2
-      doc.font(boldFont).fontSize(9).fillColor(mutedColor).text('DESIGNATION', col1X, y + 48);
-      doc.font(regularFont).fontSize(10).fillColor(darkColor).text(designation, col1X, y + 60);
+        // Cell 1: Label
+        doc.font(boldFont).fontSize(8).fillColor('#000000')
+          .text(empGrid[r][0].label, margin + 5, rowY + 5, { width: labelColWidth - 10, lineBreak: false });
+        // Cell 2: Value
+        doc.font(regularFont).fontSize(8).fillColor('#000000')
+          .text(empGrid[r][0].value, margin + labelColWidth + 5, rowY + 5, { width: valColWidth - 10, lineBreak: false, ellipsis: true });
+        // Cell 3: Label
+        doc.font(boldFont).fontSize(8).fillColor('#000000')
+          .text(empGrid[r][1].label, margin + (contentWidth / 2) + 5, rowY + 5, { width: labelColWidth - 10, lineBreak: false });
+        // Cell 4: Value
+        doc.font(regularFont).fontSize(8).fillColor('#000000')
+          .text(empGrid[r][1].value, margin + (contentWidth / 2) + labelColWidth + 5, rowY + 5, { width: valColWidth - 10, lineBreak: false, ellipsis: true });
 
-      doc.font(boldFont).fontSize(9).fillColor(mutedColor).text('DEPARTMENT', col2X, y + 48);
-      doc.font(regularFont).fontSize(10).fillColor(darkColor).text(department, col2X, y + 60);
+        // Horizontal divider
+        if (r > 0) {
+          doc.moveTo(margin, rowY).lineTo(margin + contentWidth, rowY).lineWidth(0.5).strokeColor('#000000').stroke();
+        }
+      }
 
-      doc.font(boldFont).fontSize(9).fillColor(mutedColor).text('PAYABLE DAYS', col3X, y + 48);
-      doc.font(boldFont).fontSize(10).fillColor(darkColor).text(String(payableDays), col3X, y + 60);
+      const empTableHeight = empGrid.length * empRowHeight;
 
-      y += empBoxHeight + 15;
+      // Vertical dividers
+      doc.moveTo(margin + labelColWidth, empTableY).lineTo(margin + labelColWidth, empTableY + empTableHeight).lineWidth(0.5).strokeColor('#000000').stroke();
+      doc.moveTo(margin + (contentWidth / 2), empTableY).lineTo(margin + (contentWidth / 2), empTableY + empTableHeight).lineWidth(0.5).strokeColor('#000000').stroke();
+      doc.moveTo(margin + (contentWidth / 2) + labelColWidth, empTableY).lineTo(margin + (contentWidth / 2) + labelColWidth, empTableY + empTableHeight).lineWidth(0.5).strokeColor('#000000').stroke();
+
+      // Outer table border
+      doc.rect(margin, empTableY, contentWidth, empTableHeight).lineWidth(0.75).strokeColor('#000000').stroke();
+
+      y = empTableY + empTableHeight + 10;
 
       // =======================================================================
-      // 3. EARNINGS & DEDUCTIONS TABLES (SIDE BY SIDE)
+      // 3. EARNINGS AND DEDUCTIONS (SIDE-BY-SIDE TABLES)
       // =======================================================================
-      const tableWidth = (contentWidth - 15) / 2; // 250 each
-      const tableHeaderHeight = 24;
-      const rowHeight = 22;
+      const basic = Number(pay.basic_salary) || 0;
+      const hra = Number(pay.hra) || 0;
+      const allowances = Number(pay.allowances) || 0;
+      const bonus = Number(pay.bonus) || 0;
+      const otherEarnings = Number(pay.other_earnings) || 0;
+      const grossSalary = Number(pay.gross_salary) || (basic + hra + allowances + bonus + otherEarnings);
 
-      const earningsX = margin;
-      const deductionsX = margin + tableWidth + 15;
-
-      // Earnings Header
-      doc.rect(earningsX, y, tableWidth, tableHeaderHeight).fill('#E2E8F0');
-      doc.font(boldFont).fontSize(9).fillColor(slateColor)
-        .text('EARNINGS', earningsX + 10, y + 7)
-        .text('AMOUNT', earningsX + 10, y + 7, { width: tableWidth - 20, align: 'right' });
-
-      // Deductions Header
-      doc.rect(deductionsX, y, tableWidth, tableHeaderHeight).fill('#E2E8F0');
-      doc.font(boldFont).fontSize(9).fillColor(slateColor)
-        .text('DEDUCTIONS', deductionsX + 10, y + 7)
-        .text('AMOUNT', deductionsX + 10, y + 7, { width: tableWidth - 20, align: 'right' });
-
-      y += tableHeaderHeight;
-
-      // Extract stored payroll components
-      const basic = Number(payroll.basic_salary) || 0;
-      const hra = Number(payroll.hra) || 0;
-      const allowances = Number(payroll.allowances) || 0;
-      const grossSalary = Number(payroll.gross_salary) || (basic + hra + allowances);
-
-      const pf = Number(payroll.pf_employee) || 0;
-      const pt = Number(payroll.professional_tax) || 0;
-      const otherDeductions = Number(payroll.other_deductions) || 0;
-      const totalDeductions = Number(payroll.total_deductions) || (pf + pt + otherDeductions);
-      const netSalary = Number(payroll.net_salary) || (grossSalary - totalDeductions);
+      const pfEmployee = Number(pay.pf_employee) || 0;
+      const professionalTax = Number(pay.professional_tax) || 0;
+      const tds = Number(pay.tds || pay.income_tax) || 0;
+      const esi = Number(pay.esi) || 0;
+      const otherDeductions = Number(pay.other_deductions) || 0;
+      const totalDeductions = Number(pay.total_deductions) || (pfEmployee + professionalTax + tds + esi + otherDeductions);
+      const netSalary = Number(pay.net_salary) || (grossSalary - totalDeductions);
 
       const earningsItems = [
         { label: 'Basic Salary', amount: basic },
         { label: 'House Rent Allowance (HRA)', amount: hra },
         { label: 'Special / Other Allowances', amount: allowances },
       ];
+      if (bonus > 0) earningsItems.push({ label: 'Bonus / Incentive', amount: bonus });
+      if (otherEarnings > 0) earningsItems.push({ label: 'Other Earnings', amount: otherEarnings });
 
       const deductionsItems = [
-        { label: 'Provident Fund (Employee PF)', amount: pf },
-        { label: 'Professional Tax', amount: pt },
-        { label: 'Other Deductions', amount: otherDeductions },
+        { label: 'Provident Fund (Employee PF)', amount: pfEmployee },
+        { label: 'Professional Tax', amount: professionalTax },
       ];
-
-      const rowsCount = Math.max(earningsItems.length, deductionsItems.length);
-
-      for (let i = 0; i < rowsCount; i++) {
-        const rowY = y + i * rowHeight;
-        const rowBg = i % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
-
-        // Earnings row
-        doc.rect(earningsX, rowY, tableWidth, rowHeight).fill(rowBg);
-        if (earningsItems[i]) {
-          doc.font(regularFont).fontSize(9).fillColor(darkColor)
-            .text(earningsItems[i].label, earningsX + 10, rowY + 6);
-          doc.font(regularFont).fontSize(9).fillColor(darkColor)
-            .text(formatINR(earningsItems[i].amount), earningsX + 10, rowY + 6, {
-              width: tableWidth - 20,
-              align: 'right',
-            });
-        }
-
-        // Deductions row
-        doc.rect(deductionsX, rowY, tableWidth, rowHeight).fill(rowBg);
-        if (deductionsItems[i]) {
-          doc.font(regularFont).fontSize(9).fillColor(darkColor)
-            .text(deductionsItems[i].label, deductionsX + 10, rowY + 6);
-          doc.font(regularFont).fontSize(9).fillColor(darkColor)
-            .text(formatINR(deductionsItems[i].amount), deductionsX + 10, rowY + 6, {
-              width: tableWidth - 20,
-              align: 'right',
-            });
-        }
+      if (tds > 0) deductionsItems.push({ label: 'Tax Deducted at Source (TDS)', amount: tds });
+      if (esi > 0) deductionsItems.push({ label: 'Employee State Insurance (ESI)', amount: esi });
+      if (otherDeductions > 0 || deductionsItems.length === 0) {
+        deductionsItems.push({ label: 'Other Deductions', amount: otherDeductions });
       }
 
-      y += rowsCount * rowHeight;
+      const halfWidth = contentWidth / 2; // 261.64
+      const descWidth = 165;
+      const amtWidth = halfWidth - descWidth; // 96.64
+      const thHeight = 20;
+      const trHeight = 18;
+      const rowsCount = Math.max(earningsItems.length, deductionsItems.length, 4);
+      const bodyHeight = rowsCount * trHeight;
+      const totalRowHeight = 20;
+      const tableTotalHeight = thHeight + bodyHeight + totalRowHeight;
+
+      // Table Header
+      doc.rect(margin, y, contentWidth, thHeight).fillAndStroke('#F1F5F9', '#000000').lineWidth(0.5);
+
+      // Left Header
+      doc.font(boldFont).fontSize(8.5).fillColor('#000000')
+        .text('EARNINGS', margin + 6, y + 5)
+        .text('AMOUNT (₹)', margin + descWidth, y + 5, { width: amtWidth - 6, align: 'right' });
+
+      // Right Header
+      doc.font(boldFont).fontSize(8.5).fillColor('#000000')
+        .text('DEDUCTIONS', margin + halfWidth + 6, y + 5)
+        .text('AMOUNT (₹)', margin + halfWidth + descWidth, y + 5, { width: amtWidth - 6, align: 'right' });
+
+      // Body Rows
+      for (let i = 0; i < rowsCount; i++) {
+        const trY = y + thHeight + i * trHeight;
+        const rowBg = i % 2 === 0 ? '#FFFFFF' : '#FAFBFD';
+        doc.rect(margin, trY, contentWidth, trHeight).fill(rowBg);
+
+        // Earnings Cell
+        if (earningsItems[i]) {
+          doc.font(regularFont).fontSize(8).fillColor('#000000')
+            .text(earningsItems[i].label, margin + 6, trY + 4, { width: descWidth - 10, lineBreak: false });
+          doc.font(regularFont).fontSize(8).fillColor('#000000')
+            .text(formatINR(earningsItems[i].amount), margin + descWidth, trY + 4, { width: amtWidth - 6, align: 'right' });
+        }
+
+        // Deductions Cell
+        if (deductionsItems[i]) {
+          doc.font(regularFont).fontSize(8).fillColor('#000000')
+            .text(deductionsItems[i].label, margin + halfWidth + 6, trY + 4, { width: descWidth - 10, lineBreak: false });
+          doc.font(regularFont).fontSize(8).fillColor('#000000')
+            .text(formatINR(deductionsItems[i].amount), margin + halfWidth + descWidth, trY + 4, { width: amtWidth - 6, align: 'right' });
+        }
+
+        // Row Divider
+        doc.moveTo(margin, trY + trHeight).lineTo(margin + contentWidth, trY + trHeight).lineWidth(0.5).strokeColor('#E2E8F0').stroke();
+      }
 
       // Totals Row
-      const totalRowHeight = 26;
-      // Gross Salary Total
-      doc.rect(earningsX, y, tableWidth, totalRowHeight).fill('#F1F5F9');
-      doc.font(boldFont).fontSize(10).fillColor(darkColor)
-        .text('Gross Salary', earningsX + 10, y + 8)
-        .text(formatINR(grossSalary), earningsX + 10, y + 8, {
-          width: tableWidth - 20,
-          align: 'right',
-        });
+      const totY = y + thHeight + bodyHeight;
+      doc.rect(margin, totY, contentWidth, totalRowHeight).fillAndStroke('#F1F5F9', '#000000').lineWidth(0.5);
 
-      // Total Deductions Total (Consistently formatted with negative prefix)
-      doc.rect(deductionsX, y, tableWidth, totalRowHeight).fill('#F1F5F9');
+      // Gross Salary Total
+      doc.font(boldFont).fontSize(8.5).fillColor('#000000')
+        .text('Total Earnings (Gross)', margin + 6, totY + 5)
+        .text(formatINR(grossSalary), margin + descWidth, totY + 5, { width: amtWidth - 6, align: 'right' });
+
+      // Total Deductions Total
       const formattedTotalDeductions = totalDeductions > 0
         ? `-₹${totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         : formatINR(totalDeductions);
 
-      doc.font(boldFont).fontSize(10).fillColor(darkColor)
-        .text('Total Deductions', deductionsX + 10, y + 8)
-        .text(formattedTotalDeductions, deductionsX + 10, y + 8, {
-          width: tableWidth - 20,
-          align: 'right',
-        });
+      doc.font(boldFont).fontSize(8.5).fillColor('#000000')
+        .text('Total Deductions', margin + halfWidth + 6, totY + 5)
+        .text(formattedTotalDeductions, margin + halfWidth + descWidth, totY + 5, { width: amtWidth - 6, align: 'right' });
 
-      y += totalRowHeight + 15;
+      // Grid Lines
+      doc.rect(margin, y, contentWidth, tableTotalHeight).lineWidth(0.75).strokeColor('#000000').stroke();
+      doc.moveTo(margin + halfWidth, y).lineTo(margin + halfWidth, y + tableTotalHeight).lineWidth(0.75).strokeColor('#000000').stroke();
+      doc.moveTo(margin + descWidth, y).lineTo(margin + descWidth, y + tableTotalHeight).lineWidth(0.5).strokeColor('#CBD5E1').stroke();
+      doc.moveTo(margin + halfWidth + descWidth, y).lineTo(margin + halfWidth + descWidth, y + tableTotalHeight).lineWidth(0.5).strokeColor('#CBD5E1').stroke();
 
-      // =======================================================================
-      // 4. NET SALARY CARD
-      // =======================================================================
-      const netCardHeight = 55;
-      doc.rect(margin, y, contentWidth, netCardHeight)
-        .lineWidth(1.5)
-        .strokeColor(greenColor)
-        .fillAndStroke('#F0FDF4', greenColor);
-
-      doc.font(boldFont).fontSize(11).fillColor(slateColor)
-        .text('NET SALARY PAYABLE', margin + 15, y + 14);
-
-      const statusText = `Status: ${payroll.status || 'Processed'}`;
-      doc.font(regularFont).fontSize(9).fillColor(mutedColor)
-        .text(statusText, margin + 15, y + 32);
-
-      doc.font(boldFont).fontSize(18).fillColor(greenColor)
-        .text(formatINR(netSalary), margin + 15, y + 17, {
-          width: contentWidth - 30,
-          align: 'right',
-        });
-
-      y += netCardHeight + 20;
+      y += tableTotalHeight + 10;
 
       // =======================================================================
-      // 5. OPTIONAL PF / UAN INFORMATION (if available)
+      // 4. GROSS PAY AND NET PAY SUMMARY (Prominent Summary & Amount in Words)
       // =======================================================================
-      if (pfDetails && (pfDetails.uan_number || pfDetails.pf_number)) {
-        doc.rect(margin, y, contentWidth, 34)
-          .lineWidth(1)
-          .strokeColor(borderColor)
-          .fillAndStroke(lightBg, borderColor);
+      const sumBoxHeight = 46;
+      const sumColWidth = contentWidth / 3;
 
-        let pfInfo = '';
-        if (pfDetails.uan_number) pfInfo += `UAN: ${pfDetails.uan_number}   `;
-        if (pfDetails.pf_number) pfInfo += `PF Number: ${pfDetails.pf_number}`;
+      doc.rect(margin, y, contentWidth, sumBoxHeight).fillAndStroke('#FFFFFF', '#000000').lineWidth(0.75);
 
-        doc.font(boldFont).fontSize(9).fillColor(mutedColor)
-          .text('PF DETAILS:', margin + 15, y + 11);
-        doc.font(regularFont).fontSize(9).fillColor(darkColor)
-          .text(pfInfo, margin + 90, y + 11);
+      // Top row: 3 columns
+      // Col 1: Gross Earnings
+      doc.font(boldFont).fontSize(8.5).fillColor('#333333').text('Gross Earnings:', margin + 10, y + 6);
+      doc.font(boldFont).fontSize(8.5).fillColor('#000000').text(formatINR(grossSalary), margin + 85, y + 6);
 
-        y += 44;
+      // Col 2: Total Deductions
+      doc.font(boldFont).fontSize(8.5).fillColor('#333333').text('Total Deductions:', margin + sumColWidth + 10, y + 6);
+      doc.font(boldFont).fontSize(8.5).fillColor('#000000').text(formatINR(totalDeductions), margin + sumColWidth + 92, y + 6);
+
+      // Col 3: Net Pay
+      doc.rect(margin + sumColWidth * 2, y, sumColWidth, 23).fillAndStroke('#F1F5F9', '#000000').lineWidth(0.5);
+      doc.font(boldFont).fontSize(9).fillColor('#000000').text('NET PAY:', margin + sumColWidth * 2 + 10, y + 6);
+      doc.font(boldFont).fontSize(10).fillColor('#000000').text(formatINR(netSalary), margin + sumColWidth * 2 + 60, y + 5);
+
+      // Divider inside summary box
+      doc.moveTo(margin, y + 23).lineTo(margin + contentWidth, y + 23).lineWidth(0.5).strokeColor('#000000').stroke();
+
+      // Bottom row: Amount in Words
+      const netWords = numberToWordsINR(netSalary);
+      doc.font(boldFont).fontSize(8).fillColor('#000000').text('Amount in Words:', margin + 10, y + 29);
+      doc.font(regularFont).fontSize(8).fillColor('#000000').text(netWords, margin + 92, y + 29, {
+        width: contentWidth - 100,
+        lineBreak: false,
+        ellipsis: true,
+      });
+
+      y += sumBoxHeight + 15;
+
+      // =======================================================================
+      // 5. OFFICIAL AUTHORIZATION AREA (Signature & Office Stamp)
+      // =======================================================================
+      const footerTopY = pageHeight - 55;
+      const authHeight = 72;
+      let authY = y + 10;
+      if (authY + authHeight > footerTopY - 15) {
+        authY = footerTopY - authHeight - 15;
       }
 
-      // =======================================================================
-      // 6. OFFICIAL AUTHORIZATION AREA: SIGNATURE & COMPANY STAMP
-      // =======================================================================
-      const footerY = doc.page.height - 65;
-      const authSectionHeight = 100;
+      const authBoxWidth = 200;
 
-      // Place authorization section neatly above footer with generous spacing
-      let authY = Math.max(y + 15, footerY - authSectionHeight - 20);
-      if (authY + authSectionHeight > footerY - 10) {
-        authY = footerY - authSectionHeight - 10;
-      }
-
-      const authBoxWidth = 220;
-      const authBoxHeight = 88;
-
-      // --- Left Card: Official Company Office Stamp ---
-      const stampBoxX = margin + 15;
-      const stampBoxY = authY;
+      // Left: Company Office Stamp
+      const stampX = margin + 20;
+      const stampY = authY;
 
       if (assetStatus.stampValid) {
-        // Embed genuine company stamp with aspect ratio preservation
         try {
-          doc.image(assetStatus.stampPath, stampBoxX + (authBoxWidth - 110) / 2, stampBoxY + 4, {
-            fit: [110, 52],
+          doc.image(assetStatus.stampPath, stampX + 45, stampY, {
+            fit: [110, 48],
             align: 'center',
             valign: 'center',
           });
         } catch (imgErr) {
-          console.error('Failed to embed company stamp image:', imgErr.message);
           if (shouldStrictlyRequireAssets) {
             throw new MissingPayslipAssetsError(
               `Company stamp image file at ${assetStatus.stampPath} is invalid or corrupted: ${imgErr.message}`,
@@ -605,51 +852,34 @@ function generatePayslipPdf({ employee, payroll, pfDetails, isPreview = false, r
           }
         }
       } else if (isPreview) {
-        // Preview layout guide for Company Stamp
-        doc.rect(stampBoxX + 35, stampBoxY + 6, authBoxWidth - 70, 48)
+        doc.rect(stampX + 25, stampY + 4, authBoxWidth - 50, 44)
           .dash(3, { space: 3 })
           .lineWidth(0.8)
           .strokeColor('#94A3B8');
         doc.undash();
 
-        doc.font(regularFont).fontSize(7.5).fillColor(mutedColor)
-          .text('[ OFFICIAL COMPANY STAMP ]', stampBoxX, stampBoxY + 18, {
-            width: authBoxWidth,
-            align: 'center',
-          })
-          .text('Genuine PNG Asset Location', stampBoxX, stampBoxY + 30, {
-            width: authBoxWidth,
-            align: 'center',
-          });
+        doc.font(regularFont).fontSize(7.5).fillColor('#64748B')
+          .text('[ OFFICIAL COMPANY STAMP ]', stampX, stampY + 16, { width: authBoxWidth, align: 'center' })
+          .text('Genuine PNG Asset Location', stampX, stampY + 28, { width: authBoxWidth, align: 'center' });
       }
 
-      // Stamp labels
-      const stampLabelY = stampBoxY + 60;
-      doc.font(boldFont).fontSize(8.5).fillColor(slateColor)
-        .text('COMPANY STAMP', stampBoxX, stampLabelY, {
-          width: authBoxWidth,
-          align: 'center',
-        });
-      doc.font(regularFont).fontSize(7.5).fillColor(mutedColor)
-        .text('GaintPro Software Technologies', stampBoxX, stampLabelY + 12, {
-          width: authBoxWidth,
-          align: 'center',
-        });
+      doc.font(boldFont).fontSize(8).fillColor('#000000')
+        .text('OFFICE STAMP', stampX, stampY + 52, { width: authBoxWidth, align: 'center' });
+      doc.font(regularFont).fontSize(7).fillColor('#475569')
+        .text('GaintPro Software Technologies Pvt. Ltd.', stampX, stampY + 62, { width: authBoxWidth, align: 'center' });
 
-      // --- Right Card: Authorized Signatory ---
-      const sigBoxX = margin + contentWidth - authBoxWidth - 15;
-      const sigBoxY = authY;
+      // Right: Authorized Signatory
+      const sigX = margin + contentWidth - authBoxWidth - 20;
+      const sigY = authY;
 
       if (assetStatus.signatureValid) {
-        // Embed genuine authorized signature with aspect ratio preservation
         try {
-          doc.image(assetStatus.signaturePath, sigBoxX + (authBoxWidth - 140) / 2, sigBoxY + 4, {
-            fit: [140, 48],
+          doc.image(assetStatus.signaturePath, sigX + 35, sigY, {
+            fit: [130, 44],
             align: 'center',
             valign: 'bottom',
           });
         } catch (imgErr) {
-          console.error('Failed to embed authorized signature image:', imgErr.message);
           if (shouldStrictlyRequireAssets) {
             throw new MissingPayslipAssetsError(
               `Authorized signature image file at ${assetStatus.signaturePath} is invalid or corrupted: ${imgErr.message}`,
@@ -658,62 +888,40 @@ function generatePayslipPdf({ employee, payroll, pfDetails, isPreview = false, r
           }
         }
       } else if (isPreview) {
-        // Preview layout guide for Authorized Signatory
-        doc.rect(sigBoxX + 25, sigBoxY + 6, authBoxWidth - 50, 48)
+        doc.rect(sigX + 25, sigY + 4, authBoxWidth - 50, 44)
           .dash(3, { space: 3 })
           .lineWidth(0.8)
           .strokeColor('#94A3B8');
         doc.undash();
 
-        doc.font(regularFont).fontSize(7.5).fillColor(mutedColor)
-          .text('[ AUTHORIZED SIGNATORY ]', sigBoxX, sigBoxY + 18, {
-            width: authBoxWidth,
-            align: 'center',
-          })
-          .text('Genuine PNG Signature Location', sigBoxX, sigBoxY + 30, {
-            width: authBoxWidth,
-            align: 'center',
-          });
+        doc.font(regularFont).fontSize(7.5).fillColor('#64748B')
+          .text('[ AUTHORIZED SIGNATORY ]', sigX, sigY + 16, { width: authBoxWidth, align: 'center' })
+          .text('Genuine PNG Signature Location', sigX, sigY + 28, { width: authBoxWidth, align: 'center' });
       }
 
-      // Signature divider line
-      const sigLineY = sigBoxY + 58;
-      doc.moveTo(sigBoxX + 20, sigLineY)
-        .lineTo(sigBoxX + authBoxWidth - 20, sigLineY)
-        .lineWidth(0.75)
-        .strokeColor(borderColor)
-        .stroke();
+      doc.moveTo(sigX + 20, sigY + 50).lineTo(sigX + authBoxWidth - 20, sigY + 50).lineWidth(0.5).strokeColor('#000000').stroke();
 
-      // Signatory labels
-      const sigLabelY = sigBoxY + 62;
-      doc.font(boldFont).fontSize(8.5).fillColor(slateColor)
-        .text('AUTHORIZED SIGNATORY', sigBoxX, sigLabelY, {
-          width: authBoxWidth,
-          align: 'center',
-        });
-      doc.font(regularFont).fontSize(7.5).fillColor(mutedColor)
-        .text('GaintPro Software Technologies', sigBoxX, sigLabelY + 12, {
-          width: authBoxWidth,
+      doc.font(boldFont).fontSize(8).fillColor('#000000')
+        .text('AUTHORIZED SIGNATORY', sigX, sigY + 52, { width: authBoxWidth, align: 'center' });
+      doc.font(regularFont).fontSize(7).fillColor('#475569')
+        .text('GaintPro Software Technologies Pvt. Ltd.', sigX, sigY + 62, { width: authBoxWidth, align: 'center' });
+
+      // =======================================================================
+      // 6. FOOTER (Confidentiality & Computer-Generated Notice)
+      // =======================================================================
+      doc.moveTo(margin, footerTopY).lineTo(margin + contentWidth, footerTopY).lineWidth(0.5).strokeColor('#000000').stroke();
+
+      doc.font(regularFont).fontSize(7.5).fillColor('#475569')
+        .text('Note: This is a computer-generated payslip and does not require a physical signature unless stamped.', margin, footerTopY + 6, {
+          width: contentWidth,
           align: 'center',
         });
 
-      // =======================================================================
-      // 7. FOOTER NOTICE
-      // =======================================================================
-      doc.moveTo(margin, footerY).lineTo(margin + contentWidth, footerY).lineWidth(0.75).strokeColor(borderColor).stroke();
-
-      const footerNotice = assetStatus.isComplete
-        ? 'This is an authorized payslip issued by GaintPro Software Technologies Pvt. Ltd. Confidential.'
-        : (isPreview
-            ? 'PREVIEW DRAFT — Generated for layout verification. Not an official financial document.'
-            : 'This payslip is an official document generated by GaintPro Software Technologies Pvt. Ltd.');
-
-      doc.font(regularFont).fontSize(8).fillColor(mutedColor).text(
-        footerNotice,
-        margin,
-        footerY + 10,
-        { width: contentWidth, align: 'center' }
-      );
+      doc.font(regularFont).fontSize(7).fillColor('#64748B')
+        .text('GaintPro Software Technologies Pvt. Ltd.  |  Confidential — For the employee\'s personal use only.  |  Page 1 of 1', margin, footerTopY + 18, {
+          width: contentWidth,
+          align: 'center',
+        });
 
       doc.end();
     } catch (err) {
@@ -726,6 +934,8 @@ module.exports = {
   generatePayslipPdf,
   formatINR,
   getMonthName,
+  formatDate,
+  numberToWordsINR,
   getAuthorizationAssetPaths,
   checkAuthorizationAssets,
   getCompanyLogoPath,

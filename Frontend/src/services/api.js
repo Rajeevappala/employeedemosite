@@ -52,6 +52,24 @@ const request = async (endpoint, options = {}) => {
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
+    // If a protected request fails with 401 Unauthorized, session has expired
+    if (
+      response.status === 401 &&
+      !endpoint.startsWith('/auth/request-otp') &&
+      !endpoint.startsWith('/auth/verify-otp')
+    ) {
+      try {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.setItem('session_expired_notice', 'Your session has expired. Please log in again.');
+      } catch {
+        // Storage access error fallback
+      }
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        window.location.href = '/login?expired=true';
+      }
+    }
+
     const errorMessage = data?.message || `Request failed with status ${response.status}`;
     const error = new Error(errorMessage);
     error.status = response.status;
@@ -81,6 +99,19 @@ const downloadFile = async (endpoint) => {
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      try {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        sessionStorage.setItem('session_expired_notice', 'Your session has expired. Please log in again.');
+      } catch {
+        // Storage access error fallback
+      }
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        window.location.href = '/login?expired=true';
+      }
+    }
+
     let errorMessage = `Download failed with status ${response.status}`;
     try {
       const errorJson = await response.json();
@@ -476,6 +507,10 @@ const api = {
       return request(`/admin/documents${qs ? `?${qs}` : ''}`, { method: 'GET' });
     },
 
+    // GET /api/admin/employees/:employeeId/documents
+    getEmployeeDocuments: (employeeId) =>
+      request(`/admin/employees/${encodeURIComponent(employeeId)}/documents`, { method: 'GET' }),
+
     // POST /api/admin/documents
     uploadDocument: (formData) =>
       request('/admin/documents', {
@@ -484,18 +519,24 @@ const api = {
       }),
 
     // GET /api/admin/documents/:documentId/download
-    downloadDocument: (documentId) =>
-      downloadFile(`/admin/documents/${encodeURIComponent(documentId)}/download`),
+    downloadDocument: (documentId, employeeId) => {
+      const qs = employeeId ? `?employee_id=${encodeURIComponent(employeeId)}` : '';
+      return downloadFile(`/admin/documents/${encodeURIComponent(documentId)}/download${qs}`);
+    },
 
-    // GET /api/admin/documents/:documentId/download
-    viewDocument: (documentId) =>
-      downloadFile(`/admin/documents/${encodeURIComponent(documentId)}/download`),
+    // GET /api/admin/documents/:documentId/view
+    viewDocument: (documentId, employeeId) => {
+      const qs = employeeId ? `?employee_id=${encodeURIComponent(employeeId)}` : '';
+      return downloadFile(`/admin/documents/${encodeURIComponent(documentId)}/view${qs}`);
+    },
 
     // DELETE /api/admin/documents/:documentId
-    deleteDocument: (documentId) =>
-      request(`/admin/documents/${encodeURIComponent(documentId)}`, {
+    deleteDocument: (documentId, employeeId) => {
+      const qs = employeeId ? `?employee_id=${encodeURIComponent(employeeId)}` : '';
+      return request(`/admin/documents/${encodeURIComponent(documentId)}${qs}`, {
         method: 'DELETE',
-      }),
+      });
+    },
 
     // GET /api/admin/attendance
     getAttendance: (params = {}) => {

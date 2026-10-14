@@ -14,6 +14,14 @@ router.get(
   documentController.getAdminDocuments
 );
 
+// GET /api/admin/documents/employee/:employeeId
+router.get(
+  '/employee/:employeeId',
+  authenticateToken,
+  requireRole('ADMIN'),
+  documentController.getAdminEmployeeDocuments
+);
+
 // GET /api/admin/documents/:documentId/download
 // Strictly protected: requires valid JWT session and role ADMIN
 router.get(
@@ -21,6 +29,18 @@ router.get(
   authenticateToken,
   requireRole('ADMIN'),
   documentController.downloadAdminDocument
+);
+
+// GET /api/admin/documents/:documentId/view
+// Strictly protected: requires valid JWT session and role ADMIN
+router.get(
+  '/:documentId/view',
+  authenticateToken,
+  requireRole('ADMIN'),
+  (req, res, next) => {
+    req.query.inline = 'true';
+    return documentController.downloadAdminDocument(req, res, next);
+  }
 );
 
 const { fileUploadLimiter } = require('../middleware/rateLimitMiddleware');

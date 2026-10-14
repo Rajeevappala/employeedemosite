@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const birthdayService = require('../services/birthdayService');
+const storageService = require('../services/storageService');
 
 const MONTH_NAMES = [
   'january', 'february', 'march', 'april', 'may', 'june',
@@ -7,15 +8,35 @@ const MONTH_NAMES = [
 ];
 
 /**
+ * Returns capitalized month name string for integer month (1 - 12).
+ */
+function getMonthName(monthNumber) {
+  if (typeof monthNumber === 'number' && monthNumber >= 1 && monthNumber <= 12) {
+    const raw = MONTH_NAMES[monthNumber - 1];
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
+  return '';
+}
+
+/**
  * Validates and parses month (1-12 or month name)
  */
 function parseMonthNumber(val) {
   if (val === undefined || val === null || val === '') return null;
-  const num = parseInt(val, 10);
-  if (!isNaN(num) && num >= 1 && num <= 12) return num;
+  if (typeof val === 'number') {
+    if (Number.isInteger(val) && val >= 1 && val <= 12) return val;
+    return false;
+  }
   if (typeof val === 'string') {
-    const idx = MONTH_NAMES.indexOf(val.trim().toLowerCase());
+    const trimmed = val.trim();
+    if (/^\d{1,2}$/.test(trimmed)) {
+      const num = parseInt(trimmed, 10);
+      if (num >= 1 && num <= 12) return num;
+      return false;
+    }
+    const idx = MONTH_NAMES.indexOf(trimmed.toLowerCase());
     if (idx !== -1) return idx + 1;
+    return false;
   }
   return false; // Explicitly invalid
 }
@@ -25,8 +46,19 @@ function parseMonthNumber(val) {
  */
 function parseYearNumber(val) {
   if (val === undefined || val === null || val === '') return null;
-  const num = parseInt(val, 10);
-  if (!isNaN(num) && num >= 2000 && num <= 2100) return num;
+  if (typeof val === 'number') {
+    if (Number.isInteger(val) && val >= 2000 && val <= 2100) return val;
+    return false;
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (/^\d{4}$/.test(trimmed)) {
+      const num = parseInt(trimmed, 10);
+      if (num >= 2000 && num <= 2100) return num;
+      return false;
+    }
+    return false;
+  }
   return false; // Explicitly invalid
 }
 
@@ -118,6 +150,10 @@ const getAdminDashboard = async (req, res, next) => {
       recentLeavesRes,
       recentPayrollRes,
       birthdayData,
+      latestBatchRes,
+      payrollEmployeesRes,
+      standalonePayslipsRes,
+      availableYearsRes,
     ] = await Promise.all([
       // 1. Employee summary
       pool.query(`
@@ -161,9 +197,9 @@ const getAdminDashboard = async (req, res, next) => {
       pool.query(`
         SELECT 
           COUNT(*)::int AS total_records,
-          COUNT(CASE WHEN status = 'Processed' THEN 1 END)::int AS processed,
-          COUNT(CASE WHEN status = 'Paid' THEN 1 END)::int AS paid,
-          COUNT(CASE WHEN status = 'Pending' THEN 1 END)::int AS pending,
+          COUNT(CASE WHEN UPPER(status) = 'PROCESSED' THEN 1 END)::int AS processed,
+          COUNT(CASE WHEN UPPER(status) = 'PAID' THEN 1 END)::int AS paid,
+          COUNT(CASE WHEN UPPER(status) = 'PENDING' THEN 1 END)::int AS pending,
           COALESCE(SUM(gross_salary), 0)::numeric(12,2) AS gross_salary,
           COALESCE(SUM(total_deductions), 0)::numeric(12,2) AS total_deductions,
           COALESCE(SUM(net_salary), 0)::numeric(12,2) AS net_salary
@@ -229,6 +265,73 @@ const getAdminDashboard = async (req, res, next) => {
 
       // 9. Active Employee Birthdays this month (Admin view includes employee_id and department)
       birthdayService.getCurrentMonthBirthdays({ forAdmin: true }),
+
+      // 10. Latest payroll batch for selected month & year
+      pool.query(`
+        SELECT id, batch_number, status, total_records, processed_records, payslips_generated, payslips_failed
+        FROM public.payroll_batches
+        WHERE month = $1 AND year = $2
+        ORDER BY created_at DESC
+        LIMIT 1
+      `, [payrollMonth, payrollYear]),
+
+      // 11. Processed employee payroll records & linked payslip document metadata
+      pool.query(`
+        SELECT 
+          pr.id AS record_id,
+          pr.employee_id,
+          TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS employee_name,
+          COALESCE(e.department, 'General') AS department,
+          COALESCE(e.designation, '—') AS designation,
+          pr.gross_salary,
+          pr.total_deductions,
+          pr.net_salary,
+          COALESCE(pr.status, 'Processed') AS status,
+          d.id AS document_id,
+          d.file_name,
+          d.storage_key,
+          d.created_at AS document_created_at
+        FROM public.payroll_records pr
+        JOIN public.employees e ON e.employee_id = pr.employee_id
+        LEFT JOIN public.documents d 
+          ON d.employee_id = pr.employee_id 
+         AND LOWER(d.document_type) = 'payslip' 
+         AND d.month = pr.month 
+         AND d.year = pr.year
+        WHERE pr.month = $1 AND pr.year = $2
+        ORDER BY pr.employee_id ASC
+      `, [payrollMonth, payrollYear]),
+
+      // 12. Standalone payslip documents for selected month & year
+      pool.query(`
+        SELECT 
+          d.id AS document_id,
+          d.employee_id,
+          TRIM(CONCAT(e.first_name, ' ', e.last_name)) AS employee_name,
+          COALESCE(e.department, 'General') AS department,
+          COALESCE(e.designation, '—') AS designation,
+          d.file_name,
+          d.storage_key,
+          d.created_at AS document_created_at
+        FROM public.documents d
+        JOIN public.employees e ON e.employee_id = d.employee_id
+        WHERE LOWER(d.document_type) = 'payslip' 
+          AND d.month = $1 
+          AND d.year = $2
+        ORDER BY d.employee_id ASC
+      `, [payrollMonth, payrollYear]),
+
+      // 13. Available distinct payroll years across records and documents
+      pool.query(`
+        SELECT DISTINCT year FROM (
+          SELECT year FROM public.payroll_records WHERE year IS NOT NULL
+          UNION
+          SELECT year FROM public.documents WHERE LOWER(document_type) = 'payslip' AND year IS NOT NULL
+          UNION
+          SELECT EXTRACT(YEAR FROM CURRENT_DATE)::int AS year
+        ) y
+        ORDER BY year DESC
+      `),
     ]);
 
     // Format employee stats
@@ -264,18 +367,119 @@ const getAdminDashboard = async (req, res, next) => {
       total: parseInt(leaveRow.total, 10) || 0,
     };
 
-    // Format payroll stats
+    // Format payroll stats and payslips
     const payrollRow = payrollRes.rows[0] || {};
+    const latestBatch = latestBatchRes.rows[0] || null;
+
+    let employeePayslips = [];
+    if (payrollEmployeesRes.rows.length > 0) {
+      employeePayslips = await Promise.all(
+        payrollEmployeesRes.rows.map(async (row) => {
+          let isAvailable = false;
+          if (row.document_id && row.storage_key) {
+            try {
+              isAvailable = await storageService.fileExists(row.storage_key);
+            } catch {
+              isAvailable = false;
+            }
+          }
+          return {
+            record_id: row.record_id,
+            employee_id: row.employee_id,
+            employee_name: row.employee_name,
+            department: row.department,
+            designation: row.designation,
+            gross_salary: row.gross_salary || '0.00',
+            total_deductions: row.total_deductions || '0.00',
+            net_salary: row.net_salary || '0.00',
+            status: row.status,
+            document_id: isAvailable ? row.document_id : (row.document_id || null),
+            file_name: row.file_name || null,
+            is_file_available: isAvailable,
+            has_payslip: isAvailable,
+          };
+        })
+      );
+    } else if (standalonePayslipsRes.rows.length > 0) {
+      employeePayslips = await Promise.all(
+        standalonePayslipsRes.rows.map(async (row) => {
+          let isAvailable = false;
+          if (row.document_id && row.storage_key) {
+            try {
+              isAvailable = await storageService.fileExists(row.storage_key);
+            } catch {
+              isAvailable = false;
+            }
+          }
+          return {
+            record_id: null,
+            employee_id: row.employee_id,
+            employee_name: row.employee_name,
+            department: row.department,
+            designation: row.designation,
+            gross_salary: '0.00',
+            total_deductions: '0.00',
+            net_salary: '0.00',
+            status: 'Processed',
+            document_id: isAvailable ? row.document_id : (row.document_id || null),
+            file_name: row.file_name || null,
+            is_file_available: isAvailable,
+            has_payslip: isAvailable,
+          };
+        })
+      );
+    }
+
+    const totalRecords = parseInt(payrollRow.total_records, 10) || employeePayslips.length || 0;
+    const processedCount = parseInt(payrollRow.processed, 10) || (employeePayslips.length > 0 ? employeePayslips.length : 0);
+    const paidCount = parseInt(payrollRow.paid, 10) || 0;
+    const pendingCount = parseInt(payrollRow.pending, 10) || 0;
+
+    let payrollStatus = 'Not Processed';
+    if (totalRecords === 0) {
+      payrollStatus = 'Not Processed';
+    } else if (latestBatch && latestBatch.status && latestBatch.status !== 'Validation Failed') {
+      payrollStatus = latestBatch.status;
+    } else if (totalRecords > 0) {
+      if (paidCount === totalRecords) {
+        payrollStatus = 'Paid';
+      } else if (processedCount > 0) {
+        payrollStatus = 'Processed';
+      } else {
+        payrollStatus = 'Pending';
+      }
+    } else if (employeePayslips.length > 0) {
+      payrollStatus = 'Completed';
+    }
+
+    const availableYearsList = availableYearsRes.rows.map((r) => r.year);
+    if (!availableYearsList.includes(payrollYear)) {
+      availableYearsList.unshift(payrollYear);
+    }
+
     const payroll = {
       month: payrollMonth,
       year: payrollYear,
-      total_records: parseInt(payrollRow.total_records, 10) || 0,
-      processed: parseInt(payrollRow.processed, 10) || 0,
-      paid: parseInt(payrollRow.paid, 10) || 0,
-      pending: parseInt(payrollRow.pending, 10) || 0,
+      month_name: getMonthName(payrollMonth),
+      total_records: totalRecords,
+      processed: processedCount,
+      paid: paidCount,
+      pending: pendingCount,
       gross_salary: payrollRow.gross_salary || '0.00',
       total_deductions: payrollRow.total_deductions || '0.00',
       net_salary: payrollRow.net_salary || '0.00',
+      status: payrollStatus,
+      batch: latestBatch ? {
+        batch_id: latestBatch.id,
+        batch_number: latestBatch.batch_number,
+        status: latestBatch.status,
+        total_records: latestBatch.total_records,
+        processed_records: latestBatch.processed_records,
+        payslips_generated: latestBatch.payslips_generated,
+      } : null,
+      payslips_count: employeePayslips.filter((p) => p.has_payslip).length,
+      payslips: employeePayslips,
+      available_years: availableYearsList,
     };
 
     // Format document stats

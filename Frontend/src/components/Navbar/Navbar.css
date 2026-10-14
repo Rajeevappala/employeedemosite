@@ -147,6 +147,33 @@
   line-height: 1.2;
 }
 
+.navbar-logout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #64748b;
+  background-color: transparent;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.navbar-logout-btn:hover {
+  background-color: #fee2e2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.navbar-logout-icon {
+  width: 15px;
+  height: 15px;
+}
+
 /* ==========================================================================
    Responsive Breakpoints
    ========================================================================== */

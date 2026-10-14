@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import LogoutConfirmModal from '../LogoutConfirmModal/LogoutConfirmModal';
 import './Sidebar.css';
 
 const NAV_ITEMS = [
@@ -168,8 +170,20 @@ const NAV_ITEMS = [
 function Sidebar({ isOpen, onClose }) {
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const handleLogout = () => {
+  const handleOpenLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const handleCancelLogout = () => {
+    setShowLogoutModal(false);
+  };
+
+  const handleConfirmLogout = () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
     onClose?.();
     logout();
     navigate('/login', { replace: true });
@@ -239,7 +253,7 @@ function Sidebar({ isOpen, onClose }) {
           <button
             type="button"
             className="sidebar-logout-btn"
-            onClick={handleLogout}
+            onClick={handleOpenLogout}
             aria-label="Logout"
           >
             <span className="sidebar-icon-wrapper">
@@ -261,6 +275,14 @@ function Sidebar({ isOpen, onClose }) {
           </button>
         </div>
       </aside>
+
+      {/* Logout Confirmation Modal */}
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onCancel={handleCancelLogout}
+        onConfirm={handleConfirmLogout}
+        isLoggingOut={isLoggingOut}
+      />
     </>
   );
 }

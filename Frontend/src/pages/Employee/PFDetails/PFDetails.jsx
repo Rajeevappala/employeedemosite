@@ -22,34 +22,62 @@ function formatDate(dateString) {
 }
 
 /**
- * Maps raw backend PF details data strictly to the fields stored in PostgreSQL.
- * Sourced from columns: id, employee_id, uan_number, pf_number, pension_number, created_at, updated_at.
+ * Formats currency in Indian Rupees
  */
-function mapPFData(raw) {
-  if (!raw) return null;
+function formatCurrency(val) {
+  if (val === null || val === undefined || val === '' || val === '—') return 'Not configured';
+  const num = parseFloat(val);
+  if (isNaN(num)) return 'Not configured';
+  return `₹${num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/**
+ * Maps raw backend PF details data strictly to the fields stored in PostgreSQL.
+ * Sourced from columns: id, employee_id, uan_number, pf_number, pension_number, employee_contribution, employer_contribution, pf_status.
+ */
+function mapPFData(raw, employmentFallback) {
+  if (!raw && !employmentFallback) return null;
+  const emp = raw || employmentFallback;
   return {
-    id: raw.id,
-    employeeId: raw.employee_id || '',
-    uan: raw.uan_number || '',
-    pfNumber: raw.pf_number || '',
-    pensionNumber: raw.pension_number || '',
-    createdAt: raw.created_at || null,
-    updatedAt: raw.updated_at || null,
+    id: raw?.id || null,
+    employeeId: emp?.employee_id || '',
+    employeeName: emp?.employee_name || '',
+    department: emp?.department || '',
+    designation: emp?.designation || '',
+    employmentStatus: emp?.employment_status || 'Active',
+    dateOfJoining: emp?.date_of_joining || '',
+    uan: raw?.uan_number || '',
+    pfNumber: raw?.pf_number || '',
+    pensionNumber: raw?.pension_number || '',
+    pfStatus: raw?.pf_status || (raw?.uan_number || raw?.pf_number ? 'Active' : 'Not Available'),
+    employeeContribution: formatCurrency(raw?.employee_contribution),
+    employerContribution: formatCurrency(raw?.employer_contribution),
+    rawEmployeeContribution: raw?.employee_contribution,
+    rawEmployerContribution: raw?.employer_contribution,
+    createdAt: raw?.created_at || null,
+    updatedAt: raw?.updated_at || null,
   };
 }
 
 // Reusable data field for key-value pairs
 function PFDataField({ label, value, isStatus, isMono }) {
+  const isNotConfigured = value === 'Not configured';
+  let statusBadgeClass = 'status-badge-active';
+  if (isStatus) {
+    if (value === 'Pending') statusBadgeClass = 'status-badge-pending';
+    else if (value === 'Not Available' || value === 'Inactive') statusBadgeClass = 'status-badge-neutral';
+  }
+
   return (
     <div className="pf-data-field">
       <span className="pf-data-label">{label}</span>
       {isStatus ? (
-        <span className="status-badge status-badge-active">
+        <span className={`status-badge ${statusBadgeClass}`}>
           <span className="status-badge-dot" aria-hidden="true"></span>
           {value || 'Active'}
         </span>
       ) : (
-        <span className={`pf-data-value ${isMono ? 'pf-data-mono' : ''}`}>
+        <span className={`pf-data-value ${isMono ? 'pf-data-mono' : ''} ${isNotConfigured ? 'pf-data-not-configured' : ''}`}>
           {value || '—'}
         </span>
       )}
@@ -69,7 +97,8 @@ function PFDetails() {
       setError(null);
       const response = await api.employee.getPF();
       const rawData = response?.data;
-      setPf(mapPFData(rawData));
+      const employment = response?.employment;
+      setPf(mapPFData(rawData, employment));
     } catch (err) {
       const msg =
         err.data?.message || err.message || 'Unable to load PF details. Please try again.';
@@ -81,36 +110,8 @@ function PFDetails() {
   }, []);
 
   useEffect(() => {
-    let ignore = false;
-
-    async function load() {
-      try {
-        const response = await api.employee.getPF();
-        if (!ignore) {
-          const rawData = response?.data;
-          setPf(mapPFData(rawData));
-          setError(null);
-        }
-      } catch (err) {
-        if (!ignore) {
-          const msg =
-            err.data?.message || err.message || 'Unable to load PF details. Please try again.';
-          setError(msg);
-          setPf(null);
-        }
-      } finally {
-        if (!ignore) {
-          setLoading(false);
-        }
-      }
-    }
-
-    load();
-
-    return () => {
-      ignore = true;
-    };
-  }, []);
+    fetchPF();
+  }, [fetchPF]);
 
   const handleRetry = () => {
     fetchPF();
@@ -119,28 +120,32 @@ function PFDetails() {
   // Section 1: Provident Fund Account Fields (built from actual backend columns)
   const pfAccountFields = pf
     ? [
-        { label: 'UAN Number', value: pf.uan, isMono: true },
-        { label: 'PF Number', value: pf.pfNumber, isMono: true },
-        { label: 'Pension Number (EPS)', value: pf.pensionNumber, isMono: true },
+        { label: 'UAN Number', value: pf.uan || '—', isMono: true },
+        { label: 'PF Number', value: pf.pfNumber || '—', isMono: true },
+        { label: 'Pension Number (EPS)', value: pf.pensionNumber || '—', isMono: true },
+        { label: 'PF Status', value: pf.pfStatus || 'Not Available', isStatus: true },
+        { label: 'Employee Contribution (₹)', value: pf.employeeContribution },
+        { label: 'Employer Contribution (₹)', value: pf.employerContribution },
         { label: 'Registration Date', value: formatDate(pf.createdAt) },
       ]
     : [];
 
   // Section 2: Employment Fields (authenticated employee profile context)
-  const employeeName = user
+  const employeeName = pf?.employeeName || (user
     ? [user.firstName, user.lastName].filter(Boolean).join(' ') || user.name || '—'
-    : '—';
-  const employeeStatus = user?.status
+    : '—');
+  const employeeStatus = pf?.employmentStatus || (user?.status
     ? user.status.charAt(0).toUpperCase() + user.status.slice(1).toLowerCase()
-    : 'Active';
+    : 'Active');
 
   const employmentFields = pf
     ? [
-        { label: 'Employee ID', value: pf.employeeId || user?.employee_id || '—' },
+        { label: 'Employee ID', value: pf.employeeId || user?.employee_id || '—', isMono: true },
         { label: 'Employee Name', value: employeeName },
-        { label: 'Department', value: user?.department || '—' },
-        { label: 'Designation', value: user?.designation || '—' },
+        { label: 'Department', value: pf.department || user?.department || '—' },
+        { label: 'Designation', value: pf.designation || user?.designation || '—' },
         { label: 'Employment Status', value: employeeStatus, isStatus: true },
+        { label: 'Date of Joining', value: formatDate(pf.dateOfJoining) },
       ]
     : [];
 
@@ -343,9 +348,17 @@ function PFDetails() {
                 </div>
               </div>
 
-              <span className="status-badge status-badge-active">
+              <span
+                className={`status-badge ${
+                  pf.pfStatus === 'Active'
+                    ? 'status-badge-active'
+                    : pf.pfStatus === 'Pending'
+                    ? 'status-badge-pending'
+                    : 'status-badge-neutral'
+                }`}
+              >
                 <span className="status-badge-dot" aria-hidden="true"></span>
-                Active
+                {pf.pfStatus || 'Active'}
               </span>
             </div>
 

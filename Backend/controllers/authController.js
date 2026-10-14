@@ -98,9 +98,23 @@ const verifyOtp = async (req, res, next) => {
  */
 const getMe = async (req, res, next) => {
   try {
+    const pool = require('../config/database');
+    const userResult = await pool.query(
+      `SELECT u.id, u.admin_id, u.email, u.role, u.status, u.employee_id,
+              COALESCE(e.first_name, u.first_name) AS first_name,
+              COALESCE(e.last_name, u.last_name) AS last_name,
+              e.department, e.designation
+       FROM users u
+       LEFT JOIN employees e ON u.employee_id = e.employee_id
+       WHERE u.id = $1`,
+      [req.user.id]
+    );
+
+    const user = userResult.rows[0];
+
     return res.status(200).json({
       success: true,
-      user: req.user,
+      user: user || req.user,
     });
   } catch (error) {
     next(error);

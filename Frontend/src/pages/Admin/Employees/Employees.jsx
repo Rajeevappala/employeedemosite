@@ -1371,17 +1371,19 @@ function Employees() {
                   <label htmlFor="editDesignation" className="admin-field-label">
                     Designation <span className="required" style={{ color: '#dc2626', marginLeft: '2px' }}>*</span>
                   </label>
-                  <input
+                  <select
                     id="editDesignation"
                     name="designation"
-                    type="text"
                     required
                     aria-required="true"
-                    className="admin-field-input"
+                    className="admin-field-select"
                     value={formData.designation}
                     onChange={handleFormChange}
-                    placeholder="Enter designation"
-                  />
+                  >
+                    <option value="">Select Designation</option>
+                    <option value="Associate Software Engineer">Associate Software Engineer</option>
+                    <option value="Associate">Associate</option>
+                  </select>
                 </div>
 
                 {/* Employment Type */}

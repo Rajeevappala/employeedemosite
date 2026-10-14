@@ -60,7 +60,7 @@ async function getCurrentMonthBirthdays({ forAdmin = false, client = null } = {}
     const fullName = [row.first_name, row.last_name].filter(Boolean).join(' ').trim() || 'Employee';
     const base = {
       employee_name: fullName,
-      designation: row.designation || 'Employee',
+      designation: row.designation || '—',
       birthday_day: row.birthday_day,
       birthday_month: row.birthday_month,
       birthday_label: row.birthday_label,

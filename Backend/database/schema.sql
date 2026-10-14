@@ -89,6 +89,8 @@ CREATE TABLE pf_details (
     uan_number VARCHAR(50),
     pf_number VARCHAR(50),
     pension_number VARCHAR(50),
+    employee_contribution NUMERIC(12, 2),
+    employer_contribution NUMERIC(12, 2),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

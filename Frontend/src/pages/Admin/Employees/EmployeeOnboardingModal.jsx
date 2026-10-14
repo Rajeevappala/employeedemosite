@@ -38,6 +38,8 @@ const INITIAL_WIZARD_DATA = {
   uanNumber: '',
   pfNumber: '',
   pensionNumber: '',
+  employeeContribution: '',
+  employerContribution: '',
 
   // Step 5: Bank Details
   bankNotAvailable: false,
@@ -86,6 +88,8 @@ const STEPS = [
   { number: 9, label: 'Review' },
 ];
 
+const ALLOWED_DESIGNATIONS = ['Associate Software Engineer', 'Associate'];
+
 function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
   const [userType, setUserType] = useState('Employee');
   const [adminForm, setAdminForm] = useState({
@@ -101,9 +105,10 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
   const [stepError, setStepError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+
   const [masterOptions, setMasterOptions] = useState({
     departments: ['IT', 'Non-IT'],
-    designations: ['Senior Tech Lead', 'Python Developer', 'Software Engineer', 'Product Manager', 'QA Engineer', 'HR Manager'],
+    designations: ALLOWED_DESIGNATIONS,
     employmentTypes: ['Full Time', 'Part Time', 'Contract', 'Intern'],
     locations: ['Hyderabad', 'Hyderabad HQ', 'Bangalore', 'Mumbai', 'Pune', 'Remote'],
   });
@@ -114,13 +119,15 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
       .then((res) => {
         if (isMounted && res?.success && res.data) {
           const depts = (res.data.departments || []).filter((d) => d.is_active).map((d) => d.name);
-          const desigs = (res.data.designations || []).filter((d) => d.is_active).map((d) => d.name);
+          const desigs = (res.data.designations || [])
+            .filter((d) => d.is_active && ALLOWED_DESIGNATIONS.includes(d.name))
+            .map((d) => d.name);
           const empTypes = (res.data.employmentTypes || []).filter((e) => e.is_active).map((e) => e.name);
           const locs = (res.data.locations || []).filter((l) => l.is_active).map((l) => l.name);
 
           setMasterOptions((prev) => ({
             departments: depts.length > 0 ? depts : prev.departments,
-            designations: desigs.length > 0 ? desigs : prev.designations,
+            designations: desigs.length > 0 ? desigs : ALLOWED_DESIGNATIONS,
             employmentTypes: empTypes.length > 0 ? empTypes : prev.employmentTypes,
             locations: locs.length > 0 ? locs : prev.locations,
           }));
@@ -375,6 +382,10 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
         setStepError('Designation is required.');
         return false;
       }
+      if (!ALLOWED_DESIGNATIONS.includes(formData.designation.trim())) {
+        setStepError('Please select a valid designation (Associate Software Engineer or Associate).');
+        return false;
+      }
       if (!formData.department) {
         setStepError('Department is required.');
         return false;
@@ -403,11 +414,27 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
     }
 
     if (stepNumber === 4) {
-      if (!formData.pfNotAvailable && formData.uanNumber.trim()) {
-        const uan = formData.uanNumber.trim();
-        if (!/^\d{12}$/.test(uan)) {
-          setStepError('UAN number must be exactly 12 numeric digits.');
-          return false;
+      if (!formData.pfNotAvailable) {
+        if (formData.uanNumber.trim()) {
+          const uan = formData.uanNumber.trim();
+          if (!/^\d{12}$/.test(uan)) {
+            setStepError('UAN number must be exactly 12 numeric digits.');
+            return false;
+          }
+        }
+        if (formData.employeeContribution && formData.employeeContribution.trim()) {
+          const val = parseFloat(formData.employeeContribution.trim());
+          if (isNaN(val) || val < 0) {
+            setStepError('Employee contribution must be a valid non-negative amount.');
+            return false;
+          }
+        }
+        if (formData.employerContribution && formData.employerContribution.trim()) {
+          const val = parseFloat(formData.employerContribution.trim());
+          if (isNaN(val) || val < 0) {
+            setStepError('Employer contribution must be a valid non-negative amount.');
+            return false;
+          }
         }
       }
       return true;
@@ -593,6 +620,12 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
         payload.append('uan_number', formData.uanNumber.trim());
         payload.append('pf_number', formData.pfNumber.trim());
         payload.append('pension_number', formData.pensionNumber.trim());
+        if (formData.employeeContribution && formData.employeeContribution.trim()) {
+          payload.append('employee_contribution', formData.employeeContribution.trim());
+        }
+        if (formData.employerContribution && formData.employerContribution.trim()) {
+          payload.append('employer_contribution', formData.employerContribution.trim());
+        }
       }
 
       // Step 5: Bank Details
@@ -1244,12 +1277,9 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                     onChange={handleChange}
                   >
                     <option value="">Select Designation</option>
-                    {masterOptions.designations.map((desig) => (
+                    {ALLOWED_DESIGNATIONS.map((desig) => (
                       <option key={desig} value={desig}>{desig}</option>
                     ))}
-                    {formData.designation && !masterOptions.designations.includes(formData.designation) && (
-                      <option value={formData.designation}>{formData.designation}</option>
-                    )}
                   </select>
                 </div>
 
@@ -1474,6 +1504,44 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                       onChange={handleChange}
                       placeholder="Enter pension number"
                     />
+                  </div>
+
+                  {/* Employee Contribution (₹) */}
+                  <div className="wizard-field-group">
+                    <label htmlFor="employeeContribution" className="wizard-field-label">
+                      Employee Contribution (₹)
+                    </label>
+                    <input
+                      id="employeeContribution"
+                      name="employeeContribution"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="wizard-field-input"
+                      value={formData.employeeContribution}
+                      onChange={handleChange}
+                      placeholder="e.g. 1800.00"
+                    />
+                    <span className="wizard-field-hint">Monthly contribution amount</span>
+                  </div>
+
+                  {/* Employer Contribution (₹) */}
+                  <div className="wizard-field-group">
+                    <label htmlFor="employerContribution" className="wizard-field-label">
+                      Employer Contribution (₹)
+                    </label>
+                    <input
+                      id="employerContribution"
+                      name="employerContribution"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="wizard-field-input"
+                      value={formData.employerContribution}
+                      onChange={handleChange}
+                      placeholder="e.g. 1800.00"
+                    />
+                    <span className="wizard-field-hint">Monthly contribution amount</span>
                   </div>
                 </div>
               )}
@@ -2095,6 +2163,8 @@ function EmployeeOnboardingModal({ isOpen, onClose, onSuccess }) {
                         <div><span className="review-label">UAN Number:</span> <span className="review-value font-mono">{formData.uanNumber || '—'}</span></div>
                         <div><span className="review-label">PF Number:</span> <span className="review-value font-mono">{formData.pfNumber || '—'}</span></div>
                         <div><span className="review-label">Pension Number:</span> <span className="review-value font-mono">{formData.pensionNumber || '—'}</span></div>
+                        <div><span className="review-label">Employee Contribution:</span> <span className="review-value">{formData.employeeContribution ? `₹${parseFloat(formData.employeeContribution).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Not configured'}</span></div>
+                        <div><span className="review-label">Employer Contribution:</span> <span className="review-value">{formData.employerContribution ? `₹${parseFloat(formData.employerContribution).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Not configured'}</span></div>
                       </>
                     )}
                   </div>

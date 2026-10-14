@@ -504,7 +504,7 @@ function Dashboard() {
           </div>
           <div className="summary-card-content">
             <span className="summary-main-val">{profile.employee_id}</span>
-            <span className="summary-sub-val">{profile.designation || 'Employee'}</span>
+            <span className="summary-sub-val">{profile.designation || '—'}</span>
           </div>
         </div>
 

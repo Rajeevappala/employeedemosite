@@ -116,21 +116,23 @@ async function migrateEmployeeConfiguration() {
       `, [d.name, d.desc]);
     }
 
-    // Designations
+    // Designations (Restricted to Associate Software Engineer and Associate)
     const initialDesigs = [
-      { name: 'Senior Tech Lead', desc: 'Technical architecture and team leadership' },
-      { name: 'Python Developer', desc: 'Backend application development and services' },
-      { name: 'Software Engineer', desc: 'Full-stack and frontend development' },
-      { name: 'Product Manager', desc: 'Product roadmap and feature specifications' },
-      { name: 'QA Engineer', desc: 'Quality assurance and automated testing' },
-      { name: 'HR Manager', desc: 'Human resource operations and relations' }
+      { name: 'Associate Software Engineer', desc: 'Software engineering, development, and technical delivery', is_active: true },
+      { name: 'Associate', desc: 'Operational, domain, and business associate role', is_active: true },
+      { name: 'Senior Tech Lead', desc: 'Technical architecture and team leadership', is_active: false },
+      { name: 'Python Developer', desc: 'Backend application development and services', is_active: false },
+      { name: 'Software Engineer', desc: 'Full-stack and frontend development', is_active: false },
+      { name: 'Product Manager', desc: 'Product roadmap and feature specifications', is_active: false },
+      { name: 'QA Engineer', desc: 'Quality assurance and automated testing', is_active: false },
+      { name: 'HR Manager', desc: 'Human resource operations and relations', is_active: false }
     ];
     for (const d of initialDesigs) {
       await client.query(`
-        INSERT INTO public.organization_designations (name, description)
-        VALUES ($1, $2)
+        INSERT INTO public.organization_designations (name, description, is_active)
+        VALUES ($1, $2, $3)
         ON CONFLICT (LOWER(TRIM(name))) DO NOTHING
-      `, [d.name, d.desc]);
+      `, [d.name, d.desc, d.is_active]);
     }
 
     // Employment Types

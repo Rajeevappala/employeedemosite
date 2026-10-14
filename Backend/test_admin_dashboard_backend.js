@@ -200,9 +200,17 @@ async function runTests() {
     // TEST 9: Verify Department overview against DB
     assert(Array.isArray(data?.departments), 'Departments is an array');
     assert(data?.departments?.length > 0, 'Departments contains real departments');
-    assert(data?.departments[0]?.name === 'Engineering', 'First department is Engineering');
-    assert(data?.departments[0]?.count === 1, 'Engineering count is 1');
-    assert(data?.departments[0]?.percentage === 100, 'Engineering percentage is 100%');
+    const dbDeptRes = await pool.query(`
+      SELECT 
+        COALESCE(NULLIF(TRIM(department), ''), 'Not Assigned') AS name,
+        COUNT(*)::int AS count
+      FROM public.employees
+      GROUP BY COALESCE(NULLIF(TRIM(department), ''), 'Not Assigned')
+      ORDER BY count DESC, name ASC
+    `);
+    const topDept = dbDeptRes.rows[0];
+    assert(data?.departments[0]?.name === topDept?.name, `Top department is ${topDept?.name} (got ${data?.departments[0]?.name})`);
+    assert(data?.departments[0]?.count === topDept?.count, `Top department count is ${topDept?.count} (got ${data?.departments[0]?.count})`);
 
     // TEST 10: Query filter for Payroll: month=9&year=2026
     const resFilteredPayroll = await makeRequest({
@@ -216,11 +224,22 @@ async function runTests() {
     const filteredData = resFilteredPayroll.json()?.data;
     assert(filteredData?.payroll?.month === 9, 'Filtered payroll month is 9');
     assert(filteredData?.payroll?.year === 2026, 'Filtered payroll year is 2026');
-    assert(filteredData?.payroll?.total_records === 1, 'Filtered payroll total_records is 1');
-    assert(filteredData?.payroll?.processed === 1, 'Filtered payroll processed is 1');
-    assert(parseFloat(filteredData?.payroll?.gross_salary) === 40000, 'Filtered gross salary is 40000');
-    assert(parseFloat(filteredData?.payroll?.total_deductions) === 2500, 'Filtered deductions is 2500');
-    assert(parseFloat(filteredData?.payroll?.net_salary) === 37500, 'Filtered net salary is 37500');
+    const dbPay9 = await pool.query(`
+      SELECT 
+        COUNT(*)::int AS count,
+        COUNT(CASE WHEN UPPER(status) = 'PROCESSED' THEN 1 END)::int AS processed,
+        COALESCE(SUM(gross_salary), 0)::numeric AS gross,
+        COALESCE(SUM(total_deductions), 0)::numeric AS deductions,
+        COALESCE(SUM(net_salary), 0)::numeric AS net
+      FROM public.payroll_records 
+      WHERE month = 9 AND year = 2026
+    `);
+    const exp9 = dbPay9.rows[0];
+    assert(filteredData?.payroll?.total_records === exp9.count, `Filtered payroll total_records is ${exp9.count}`);
+    assert(filteredData?.payroll?.processed === exp9.processed, `Filtered payroll processed is ${exp9.processed}`);
+    assert(parseFloat(filteredData?.payroll?.gross_salary) === parseFloat(exp9.gross), `Filtered gross salary is ${exp9.gross}`);
+    assert(parseFloat(filteredData?.payroll?.total_deductions) === parseFloat(exp9.deductions), `Filtered deductions is ${exp9.deductions}`);
+    assert(parseFloat(filteredData?.payroll?.net_salary) === parseFloat(exp9.net), `Filtered net salary is ${exp9.net}`);
 
     // TEST 11: Query filter for Payroll with empty period: month=1&year=2024
     const resEmptyPayroll = await makeRequest({

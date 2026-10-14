@@ -201,7 +201,7 @@ const getAdminPayrollRecords = async (req, res, next) => {
       name: row.employee_name,
       employee_name: row.employee_name,
       department: row.department || 'General',
-      designation: row.designation || 'Staff',
+      designation: row.designation || '—',
       month: row.month,
       month_name: getMonthName(row.month),
       year: row.year,
@@ -953,7 +953,7 @@ const generateAdminPayslip = async (req, res, next) => {
 
     // 1. Verify employee existence in public.employees
     const empCheck = await pool.query(
-      `SELECT employee_id, first_name, last_name, department, designation, email, status
+      `SELECT employee_id, first_name, last_name, department, designation, email, status, date_of_joining, work_location
        FROM public.employees
        WHERE employee_id = $1`,
       [cleanEmpId]
@@ -993,12 +993,20 @@ const generateAdminPayslip = async (req, res, next) => {
       });
     }
 
-    // 4. Optional PF details
+    // 4. Optional PF details & Bank details
     const pfRes = await pool.query(
       `SELECT uan_number, pf_number FROM public.pf_details WHERE employee_id = $1`,
       [cleanEmpId]
     );
     const pfDetails = pfRes.rows[0] || null;
+
+    const bankRes = await pool.query(
+      `SELECT bank_name, account_number_last4, branch_name, ifsc_code, account_type
+       FROM public.employee_bank_details
+       WHERE employee_id = $1 LIMIT 1`,
+      [cleanEmpId]
+    );
+    const bankDetails = bankRes.rows[0] || null;
 
     // 5. Idempotent check: Check if a payslip document already exists in public.documents
     const existingDocRes = await pool.query(
@@ -1030,7 +1038,7 @@ const generateAdminPayslip = async (req, res, next) => {
       }
 
       // If DB record exists but physical file is missing from storage, regenerate into existing storage key
-      const pdfBuffer = await generatePayslipPdf({ employee, payroll, pfDetails });
+      const pdfBuffer = await generatePayslipPdf({ employee, payroll, pfDetails, bankDetails });
       await storageService.saveFile(pdfBuffer, existingDoc.storage_key);
 
       return res.status(200).json({
@@ -1048,7 +1056,7 @@ const generateAdminPayslip = async (req, res, next) => {
     }
 
     // 6. Generate fresh PDF buffer
-    const pdfBuffer = await generatePayslipPdf({ employee, payroll, pfDetails });
+    const pdfBuffer = await generatePayslipPdf({ employee, payroll, pfDetails, bankDetails });
 
     // 7. Save PDF to private storage
     const monthName = getMonthName(monthNum);
@@ -2601,8 +2609,8 @@ const previewPayslipPdf = async (req, res, next) => {
         employee_id: 'GP0001N',
         first_name: 'Rajeev',
         last_name: 'Appala',
-        designation: 'Lead Software Engineer',
-        department: 'Information Technology',
+        designation: 'Associate Software Engineer',
+        department: 'IT',
       };
     }
 

@@ -23,6 +23,7 @@ function isValidDateString(dateStr) {
   return day >= 1 && day <= daysInMonth[month - 1];
 }
 
+const ALLOWED_DESIGNATIONS = ['Associate Software Engineer', 'Associate'];
 
 /**
  * Controller to fetch the paginated employee list for administrators.
@@ -211,12 +212,12 @@ const getEmployeeById = async (req, res, next) => {
         [sanitizedEmployeeId]
       ),
       pool.query(
-        `SELECT uan_number, pf_number, pension_number
+        `SELECT uan_number, pf_number, pension_number, employee_contribution, employer_contribution
          FROM public.pf_details WHERE employee_id = $1`,
         [sanitizedEmployeeId]
       ),
       pool.query(
-        `SELECT id, document_type, file_name, month, year, created_at
+        `SELECT id, document_type, file_name, month, year, created_at, storage_key
          FROM public.documents WHERE employee_id = $1 ORDER BY created_at DESC`,
         [sanitizedEmployeeId]
       ),
@@ -235,6 +236,30 @@ const getEmployeeById = async (req, res, next) => {
       account_number: maskAccountNumber(bankRow.account_number_last4),
     } : null;
 
+    // Check physical file existence in private storage for genuine availability status
+    const documentsWithAvailability = await Promise.all(
+      (docsRes.rows || []).map(async (doc) => {
+        let isAvailable = false;
+        try {
+          isAvailable = Boolean(doc.storage_key && (await storageService.fileExists(doc.storage_key)));
+        } catch (_) {
+          isAvailable = false;
+        }
+        return {
+          id: doc.id,
+          employee_id: sanitizedEmployeeId,
+          document_type: doc.document_type,
+          file_name: doc.file_name,
+          month: doc.month,
+          year: doc.year,
+          created_at: doc.created_at,
+          is_file_available: isAvailable,
+          file_available: isAvailable,
+          status: isAvailable ? 'Available' : 'Unavailable',
+        };
+      })
+    );
+
     const sanitizedData = {
       ...emp,
       has_profile_photo: hasPhoto,
@@ -245,7 +270,7 @@ const getEmployeeById = async (req, res, next) => {
       leave_balances: leavesRes.rows[0] || null,
       pf_details: pfRes.rows[0] || null,
       pf: pfRes.rows[0] || null,
-      documents: docsRes.rows || [],
+      documents: documentsWithAvailability,
       bank_details: sanitizedBankDetails,
       bank: sanitizedBankDetails,
     };
@@ -400,6 +425,12 @@ const onboardEmployee = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Designation is required.' });
     }
     const sanitizedDesignation = designation.trim();
+    if (!ALLOWED_DESIGNATIONS.includes(sanitizedDesignation)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid designation '${sanitizedDesignation}'. Allowed designations: Associate Software Engineer, Associate.`,
+      });
+    }
 
     // Validation: Phone
     let sanitizedPhone = null;
@@ -467,6 +498,26 @@ const onboardEmployee = async (req, res, next) => {
 
     if (!isPfNotAvailable && uanNumber && !/^\d{12}$/.test(uanNumber)) {
       return res.status(400).json({ success: false, message: 'UAN number must be exactly 12 numeric digits.' });
+    }
+
+    const rawEmpContrib = pfObj.employeeContribution ?? pfObj.employee_contribution ?? req.body.employee_contribution ?? req.body.employeeContribution;
+    let employeeContribution = null;
+    if (rawEmpContrib !== undefined && rawEmpContrib !== null && String(rawEmpContrib).trim() !== '' && String(rawEmpContrib).trim() !== '—') {
+      const parsed = parseFloat(rawEmpContrib);
+      if (isNaN(parsed) || parsed < 0) {
+        return res.status(400).json({ success: false, message: 'Employee contribution must be a non-negative number.' });
+      }
+      employeeContribution = Math.round(parsed * 100) / 100;
+    }
+
+    const rawEmprContrib = pfObj.employerContribution ?? pfObj.employer_contribution ?? req.body.employer_contribution ?? req.body.employerContribution;
+    let employerContribution = null;
+    if (rawEmprContrib !== undefined && rawEmprContrib !== null && String(rawEmprContrib).trim() !== '' && String(rawEmprContrib).trim() !== '—') {
+      const parsed = parseFloat(rawEmprContrib);
+      if (isNaN(parsed) || parsed < 0) {
+        return res.status(400).json({ success: false, message: 'Employer contribution must be a non-negative number.' });
+      }
+      employerContribution = Math.round(parsed * 100) / 100;
     }
 
     // Validation: Working Days per Week (Step 3)
@@ -647,12 +698,12 @@ const onboardEmployee = async (req, res, next) => {
     );
 
     // 10. Optional PF details (Only store if not toggled off and at least one field provided)
-    if (!isPfNotAvailable && (uanNumber || pfNumber || pensionNumber)) {
+    if (!isPfNotAvailable && (uanNumber || pfNumber || pensionNumber || employeeContribution !== null || employerContribution !== null)) {
       await client.query(
         `INSERT INTO public.pf_details (
-           employee_id, uan_number, pf_number, pension_number
-         ) VALUES ($1, $2, $3, $4)`,
-        [employeeId, uanNumber || null, pfNumber || null, pensionNumber || null]
+           employee_id, uan_number, pf_number, pension_number, employee_contribution, employer_contribution
+         ) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [employeeId, uanNumber || null, pfNumber || null, pensionNumber || null, employeeContribution, employerContribution]
       );
     }
 
@@ -976,6 +1027,20 @@ const updateEmployeeProfile = async (req, res, next) => {
       }
     }
 
+    // Designation validation: accept only Associate Software Engineer or Associate
+    if (designation !== undefined) {
+      if (!designation || typeof designation !== 'string' || !designation.trim()) {
+        return res.status(400).json({ success: false, message: 'Designation cannot be empty.' });
+      }
+      const sanitizedNewDesig = designation.trim();
+      if (!ALLOWED_DESIGNATIONS.includes(sanitizedNewDesig)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid designation '${sanitizedNewDesig}'. Allowed designations: Associate Software Engineer, Associate.`,
+        });
+      }
+    }
+
     // Handle email update if supplied and different
     let newEmail = null;
     if (email && typeof email === 'string' && email.trim().toLowerCase() !== currentEmp.email?.toLowerCase()) {
@@ -1157,19 +1222,43 @@ const updateEmployeeProfile = async (req, res, next) => {
       const pfNum = (req.body.pf_number ?? req.body.pfNumber ?? pfDetails.pfNumber ?? pfDetails.pf_number ?? '').toString().trim();
       const penNum = (req.body.pension_number ?? req.body.pensionNumber ?? pfDetails.pensionNumber ?? pfDetails.pension_number ?? '').toString().trim();
 
+      const rawEmpContrib = req.body.employee_contribution ?? req.body.employeeContribution ?? pfDetails.employeeContribution ?? pfDetails.employee_contribution;
+      let empContrib = null;
+      if (rawEmpContrib !== undefined && rawEmpContrib !== null && String(rawEmpContrib).trim() !== '' && String(rawEmpContrib).trim() !== '—') {
+        const parsed = parseFloat(rawEmpContrib);
+        if (isNaN(parsed) || parsed < 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ success: false, message: 'Employee contribution must be a non-negative number.' });
+        }
+        empContrib = Math.round(parsed * 100) / 100;
+      }
+
+      const rawEmprContrib = req.body.employer_contribution ?? req.body.employerContribution ?? pfDetails.employerContribution ?? pfDetails.employer_contribution;
+      let emprContrib = null;
+      if (rawEmprContrib !== undefined && rawEmprContrib !== null && String(rawEmprContrib).trim() !== '' && String(rawEmprContrib).trim() !== '—') {
+        const parsed = parseFloat(rawEmprContrib);
+        if (isNaN(parsed) || parsed < 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ success: false, message: 'Employer contribution must be a non-negative number.' });
+        }
+        emprContrib = Math.round(parsed * 100) / 100;
+      }
+
       if (isPfNotAvailable) {
         await client.query('DELETE FROM public.pf_details WHERE employee_id = $1', [trimmedId]);
-      } else if (uanNum || pfNum || penNum) {
+      } else if (uanNum || pfNum || penNum || empContrib !== null || emprContrib !== null) {
         await client.query(
           `INSERT INTO public.pf_details (
-             employee_id, uan_number, pf_number, pension_number
-           ) VALUES ($1, $2, $3, $4)
+             employee_id, uan_number, pf_number, pension_number, employee_contribution, employer_contribution
+           ) VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (employee_id) DO UPDATE SET
              uan_number = EXCLUDED.uan_number,
              pf_number = EXCLUDED.pf_number,
              pension_number = EXCLUDED.pension_number,
+             employee_contribution = EXCLUDED.employee_contribution,
+             employer_contribution = EXCLUDED.employer_contribution,
              updated_at = NOW()`,
-          [trimmedId, uanNum || null, pfNum || null, penNum || null]
+          [trimmedId, uanNum || null, pfNum || null, penNum || null, empContrib, emprContrib]
         );
       }
 

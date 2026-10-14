@@ -210,8 +210,8 @@ async function runFinalVerificationSuite() {
     assert.strictEqual(invDbRow.otp_hash.length, 64, 'Stored OTP must be a 64-char SHA-256 hex string');
     assert.strictEqual(invDbRow.attempts, 0, 'Initial attempts must be 0');
     const expiryDiff = new Date(invDbRow.expires_at).getTime() - new Date(invDbRow.created_at).getTime();
-    assert(expiryDiff >= 290000 && expiryDiff <= 310000, 'OTP expiry must be approximately 5 minutes (300,000 ms)');
-    console.log('  ✅ PASS: Salted SHA-256 hash storage and 5-minute expiry verified.');
+    assert(expiryDiff >= 110000 && expiryDiff <= 130000, 'OTP expiry must be approximately 2 minutes (120,000 ms)');
+    console.log('  ✅ PASS: Salted SHA-256 hash storage and 2-minute (120s) expiry verified.');
 
     // 3d. 60-second rate-limit cooldown
     let cooldownCaught = false;

@@ -70,6 +70,8 @@ const INITIAL_EDIT_DATA = {
   uanNumber: '',
   pfNumber: '',
   pensionNumber: '',
+  employeeContribution: '',
+  employerContribution: '',
 
   // Step 5: Bank Details
   bankNotAvailable: false,
@@ -107,6 +109,8 @@ const INITIAL_EDIT_DATA = {
   otherDocument: null,
 };
 
+const ALLOWED_DESIGNATIONS = ['Associate Software Engineer', 'Associate'];
+
 export default function EmployeeEdit() {
   const { employeeId } = useParams();
   const navigate = useNavigate();
@@ -123,9 +127,10 @@ export default function EmployeeEdit() {
   const [submitting, setSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
+
   const [masterOptions, setMasterOptions] = useState({
     departments: ['IT', 'Non-IT'],
-    designations: ['Senior Tech Lead', 'Python Developer', 'Software Engineer', 'Product Manager', 'QA Engineer', 'HR Manager'],
+    designations: ALLOWED_DESIGNATIONS,
     employmentTypes: ['Full Time', 'Part Time', 'Contract', 'Intern', 'Probationary'],
     locations: ['Hyderabad', 'Hyderabad HQ', 'Bangalore', 'Mumbai', 'Pune', 'Remote'],
   });
@@ -136,13 +141,15 @@ export default function EmployeeEdit() {
       .then((res) => {
         if (isMounted && res?.success && res.data) {
           const depts = (res.data.departments || []).filter((d) => d.is_active).map((d) => d.name);
-          const desigs = (res.data.designations || []).filter((d) => d.is_active).map((d) => d.name);
+          const desigs = (res.data.designations || [])
+            .filter((d) => d.is_active && ALLOWED_DESIGNATIONS.includes(d.name))
+            .map((d) => d.name);
           const empTypes = (res.data.employmentTypes || []).filter((e) => e.is_active).map((e) => e.name);
           const locs = (res.data.locations || []).filter((l) => l.is_active).map((l) => l.name);
 
           setMasterOptions((prev) => ({
             departments: depts.length > 0 ? depts : prev.departments,
-            designations: desigs.length > 0 ? desigs : prev.designations,
+            designations: desigs.length > 0 ? desigs : ALLOWED_DESIGNATIONS,
             employmentTypes: empTypes.length > 0 ? empTypes : prev.employmentTypes,
             locations: locs.length > 0 ? locs : prev.locations,
           }));
@@ -249,6 +256,8 @@ export default function EmployeeEdit() {
           uanNumber: pf.uan_number || '',
           pfNumber: pf.pf_number || '',
           pensionNumber: pf.pension_number || '',
+          employeeContribution: pf.employee_contribution !== null && pf.employee_contribution !== undefined ? String(pf.employee_contribution) : '',
+          employerContribution: pf.employer_contribution !== null && pf.employer_contribution !== undefined ? String(pf.employer_contribution) : '',
 
           // Step 5: Bank Details
           bankNotAvailable: !hasBankRecord,
@@ -459,6 +468,10 @@ export default function EmployeeEdit() {
         setStepError('Designation is required.');
         return false;
       }
+      if (!ALLOWED_DESIGNATIONS.includes(formData.designation.trim())) {
+        setStepError('Please select a valid designation (Associate Software Engineer or Associate).');
+        return false;
+      }
       if (!formData.department) {
         setStepError('Department is required.');
         return false;
@@ -487,11 +500,27 @@ export default function EmployeeEdit() {
     }
 
     if (stepNumber === 4) {
-      if (!formData.pfNotAvailable && formData.uanNumber.trim()) {
-        const uan = formData.uanNumber.trim();
-        if (!/^\d{12}$/.test(uan)) {
-          setStepError('UAN number must be exactly 12 numeric digits.');
-          return false;
+      if (!formData.pfNotAvailable) {
+        if (formData.uanNumber.trim()) {
+          const uan = formData.uanNumber.trim();
+          if (!/^\d{12}$/.test(uan)) {
+            setStepError('UAN number must be exactly 12 numeric digits.');
+            return false;
+          }
+        }
+        if (formData.employeeContribution && formData.employeeContribution.trim()) {
+          const val = parseFloat(formData.employeeContribution.trim());
+          if (isNaN(val) || val < 0) {
+            setStepError('Employee contribution must be a valid non-negative amount.');
+            return false;
+          }
+        }
+        if (formData.employerContribution && formData.employerContribution.trim()) {
+          const val = parseFloat(formData.employerContribution.trim());
+          if (isNaN(val) || val < 0) {
+            setStepError('Employer contribution must be a valid non-negative amount.');
+            return false;
+          }
         }
       }
       return true;
@@ -717,6 +746,8 @@ export default function EmployeeEdit() {
       uanNumber: 'UAN Number',
       pfNumber: 'PF Number',
       pensionNumber: 'Pension Number',
+      employeeContribution: 'PF Employee Contribution (₹)',
+      employerContribution: 'PF Employer Contribution (₹)',
       bankNotAvailable: 'Bank Status',
       bankAccountHolderName: 'Account Holder Name',
       bankName: 'Bank Name',
@@ -841,10 +872,14 @@ export default function EmployeeEdit() {
         payload.append('uan_number', formData.uanNumber.trim());
         payload.append('pf_number', formData.pfNumber.trim());
         payload.append('pension_number', formData.pensionNumber.trim());
+        payload.append('employee_contribution', formData.employeeContribution.trim());
+        payload.append('employer_contribution', formData.employerContribution.trim());
       } else {
         payload.append('uan_number', '');
         payload.append('pf_number', '');
         payload.append('pension_number', '');
+        payload.append('employee_contribution', '');
+        payload.append('employer_contribution', '');
       }
 
       // Step 5: Bank Details
@@ -992,7 +1027,7 @@ export default function EmployeeEdit() {
             <div className="admin-edit-identity-meta">
               <span className="admin-edit-id-badge">{formData.employeeId}</span>
               <span className="admin-edit-meta-separator">•</span>
-              <span className="admin-edit-meta-sub">{formData.designation || 'Staff'}</span>
+              <span className="admin-edit-meta-sub">{formData.designation || '—'}</span>
               <span className="admin-edit-meta-separator">•</span>
               <span className="admin-edit-meta-sub">{formData.department || 'Technology'}</span>
             </div>
@@ -1392,22 +1427,24 @@ export default function EmployeeEdit() {
                 <label className="admin-edit-label" htmlFor="edit-designation">
                   <span>Designation <span className="admin-edit-req-star">*</span></span>
                 </label>
-                <input
+                <select
                   id="edit-designation"
                   name="designation"
-                  type="text"
-                  className="admin-edit-input"
-                  list="edit-designations-list"
+                  className="admin-edit-select"
                   value={formData.designation}
                   onChange={handleChange}
-                  placeholder="e.g., Python Developer"
                   required
-                />
-                <datalist id="edit-designations-list">
-                  {(masterOptions.designations || []).map((d) => (
-                    <option key={d} value={d} />
+                >
+                  <option value="">Select Designation</option>
+                  {ALLOWED_DESIGNATIONS.map((d) => (
+                    <option key={d} value={d}>{d}</option>
                   ))}
-                </datalist>
+                </select>
+                {formData.designation && !ALLOWED_DESIGNATIONS.includes(formData.designation) && (
+                  <div style={{ marginTop: '4px', fontSize: '12px', color: '#b45309', fontWeight: 500 }}>
+                    Current record has legacy designation: &ldquo;{formData.designation}&rdquo;. Please select a valid role.
+                  </div>
+                )}
               </div>
 
               {/* Department */}
@@ -1613,7 +1650,7 @@ export default function EmployeeEdit() {
                   </div>
 
                   {/* Pension Number */}
-                  <div className="admin-edit-form-group admin-edit-full-width">
+                  <div className="admin-edit-form-group">
                     <label className="admin-edit-label" htmlFor="edit-pension">
                       <span>Pension Account Number (EPS)</span>
                     </label>
@@ -1625,6 +1662,42 @@ export default function EmployeeEdit() {
                       value={formData.pensionNumber}
                       onChange={handleChange}
                       placeholder="Optional pension registration"
+                    />
+                  </div>
+
+                  {/* Employee Contribution (₹) */}
+                  <div className="admin-edit-form-group">
+                    <label className="admin-edit-label" htmlFor="edit-employee-contrib">
+                      <span>Employee Contribution (₹)</span>
+                    </label>
+                    <input
+                      id="edit-employee-contrib"
+                      name="employeeContribution"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="admin-edit-input"
+                      value={formData.employeeContribution}
+                      onChange={handleChange}
+                      placeholder="e.g., 1800.00"
+                    />
+                  </div>
+
+                  {/* Employer Contribution (₹) */}
+                  <div className="admin-edit-form-group">
+                    <label className="admin-edit-label" htmlFor="edit-employer-contrib">
+                      <span>Employer Contribution (₹)</span>
+                    </label>
+                    <input
+                      id="edit-employer-contrib"
+                      name="employerContribution"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="admin-edit-input"
+                      value={formData.employerContribution}
+                      onChange={handleChange}
+                      placeholder="e.g., 1800.00"
                     />
                   </div>
                 </>
@@ -2337,6 +2410,22 @@ export default function EmployeeEdit() {
                       {formData.pfNotAvailable ? 'Not Applicable' : (formData.uanNumber ? `UAN: ${formData.uanNumber}` : 'Configured')}
                     </span>
                   </div>
+                  {!formData.pfNotAvailable && (
+                    <>
+                      <div className="admin-edit-review-item">
+                        <span className="admin-edit-review-item-label">PF Employee Contribution</span>
+                        <span className="admin-edit-review-item-val">
+                          {formData.employeeContribution ? `₹${parseFloat(formData.employeeContribution).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Not configured'}
+                        </span>
+                      </div>
+                      <div className="admin-edit-review-item">
+                        <span className="admin-edit-review-item-label">PF Employer Contribution</span>
+                        <span className="admin-edit-review-item-val">
+                          {formData.employerContribution ? `₹${parseFloat(formData.employerContribution).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Not configured'}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 

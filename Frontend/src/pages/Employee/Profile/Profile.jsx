@@ -298,7 +298,7 @@ export default function Profile() {
                     {employee.employee_id}
                   </span>
                   <span className="profile-meta-separator" aria-hidden="true">•</span>
-                  <span className="profile-meta-text">{employee.designation || 'Staff'}</span>
+                  <span className="profile-meta-text">{employee.designation || '—'}</span>
                   <span className="profile-meta-separator" aria-hidden="true">•</span>
                   <span className="profile-meta-text">{employee.department || 'General'}</span>
                 </div>

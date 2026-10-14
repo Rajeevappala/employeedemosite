@@ -306,6 +306,32 @@
   border: 1px solid #a7f3d0;
 }
 
+.status-badge-pending {
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.status-badge-pending .status-badge-dot {
+  background-color: #f59e0b;
+}
+
+.status-badge-neutral {
+  background-color: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid #e5e7eb;
+}
+
+.status-badge-neutral .status-badge-dot {
+  background-color: #9ca3af;
+}
+
+.pf-data-not-configured {
+  color: #6b7280;
+  font-weight: 500;
+  font-style: italic;
+}
+
 .status-badge-dot {
   width: 6px;
   height: 6px;

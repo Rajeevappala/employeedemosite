@@ -3,6 +3,7 @@ const router = express.Router();
 
 const adminEmployeeController = require('../controllers/adminEmployeeController');
 const bankDetailsController = require('../controllers/bankDetailsController');
+const documentController = require('../controllers/documentController');
 const { authenticateToken, requireRole } = require('../middleware/authMiddleware');
 const { uploadOnboardingFiles } = require('../middleware/uploadMiddleware');
 
@@ -109,6 +110,43 @@ router.patch(
   authenticateToken,
   requireRole('ADMIN'),
   bankDetailsController.verifyAdminEmployeeBankDetails
+);
+
+// GET /api/admin/employees/:employeeId/documents
+// Strictly protected: requires valid JWT session and role ADMIN.
+// Returns all documents strictly belonging to the specified employee.
+router.get(
+  '/:employeeId/documents',
+  authenticateToken,
+  requireRole('ADMIN'),
+  documentController.getAdminEmployeeDocuments
+);
+
+// GET /api/admin/employees/:employeeId/documents/:documentId/download
+router.get(
+  '/:employeeId/documents/:documentId/download',
+  authenticateToken,
+  requireRole('ADMIN'),
+  documentController.downloadAdminDocument
+);
+
+// GET /api/admin/employees/:employeeId/documents/:documentId/view
+router.get(
+  '/:employeeId/documents/:documentId/view',
+  authenticateToken,
+  requireRole('ADMIN'),
+  (req, res, next) => {
+    req.query.inline = 'true';
+    return documentController.downloadAdminDocument(req, res, next);
+  }
+);
+
+// DELETE /api/admin/employees/:employeeId/documents/:documentId
+router.delete(
+  '/:employeeId/documents/:documentId',
+  authenticateToken,
+  requireRole('ADMIN'),
+  documentController.deleteAdminDocument
 );
 
 // DELETE /api/admin/employees/:employeeId

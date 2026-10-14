@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import LogoutConfirmModal from '../LogoutConfirmModal/LogoutConfirmModal';
 import gaintproLogo from '../../assets/gaintpro-logo.png';
 import './AdminLayout.css';
 
@@ -168,6 +169,8 @@ const ADMIN_NAV_ITEMS = [
 
 function AdminLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { logout } = useAuth();
@@ -196,7 +199,18 @@ function AdminLayout() {
     setIsSidebarOpen(false);
   };
 
-  const handleLogout = () => {
+  const handleOpenLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const handleCancelLogout = () => {
+    setShowLogoutModal(false);
+  };
+
+  const handleConfirmLogout = () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    closeSidebar();
     logout();
     navigate('/login', { replace: true });
   };
@@ -258,7 +272,7 @@ function AdminLayout() {
         </div>
 
         <div className="admin-navbar-right">
-          {/* Admin Profile Section (Notification UI completely removed) */}
+          {/* Admin Profile Section */}
           <div className="admin-navbar-user-profile">
             <div className="admin-navbar-avatar" aria-hidden="true">
               <svg
@@ -278,6 +292,31 @@ function AdminLayout() {
               <span className="admin-navbar-role">Administrator</span>
             </div>
           </div>
+
+          {/* Admin Header Logout Button */}
+          <button
+            type="button"
+            className="admin-header-logout-btn"
+            onClick={handleOpenLogout}
+            aria-label="Logout"
+            title="Logout"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="admin-header-logout-icon"
+              aria-hidden="true"
+            >
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            <span className="admin-header-logout-label">Logout</span>
+          </button>
         </div>
       </header>
 
@@ -359,7 +398,7 @@ function AdminLayout() {
             <button
               type="button"
               className="admin-sidebar-action-btn admin-logout-btn"
-              onClick={handleLogout}
+              onClick={handleOpenLogout}
               aria-label="Logout"
             >
               <span className="admin-sidebar-icon-wrapper">
@@ -387,6 +426,14 @@ function AdminLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Logout Confirmation Modal */}
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onCancel={handleCancelLogout}
+        onConfirm={handleConfirmLogout}
+        isLoggingOut={isLoggingOut}
+      />
     </div>
   );
 }

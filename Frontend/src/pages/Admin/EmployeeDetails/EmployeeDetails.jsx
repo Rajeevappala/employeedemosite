@@ -1,7 +1,495 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../../services/api';
 import './EmployeeDetails.css';
+import '../../Employee/Documents/Documents.css';
+
+const CATEGORY_TABS = [
+  { id: 'all', label: 'All' },
+  { id: 'employment', label: 'Employment' },
+  { id: 'identity', label: 'Identity & Personal' },
+  { id: 'statutory', label: 'PF & Statutory' },
+  { id: 'payslip', label: 'Payslips' },
+  { id: 'other', label: 'Other' },
+];
+
+const SECTION_CONFIG = {
+  employment: { id: 'employment', title: 'Employment Documents' },
+  identity: { id: 'identity', title: 'Identity and Personal Documents' },
+  statutory: { id: 'statutory', title: 'PF and Statutory Documents' },
+  payslip: { id: 'payslip', title: 'Payslips' },
+  other: { id: 'other', title: 'Other Documents' },
+};
+
+function determineCategory(documentType) {
+  if (!documentType) return 'other';
+  const lower = documentType.trim().toLowerCase();
+
+  const employmentKeywords = [
+    'offer letter',
+    'appointment letter',
+    'experience letter',
+    'experience certificate',
+    'relieving letter',
+    'fnf',
+    'settlement',
+    'internship',
+    'employment',
+    'contract',
+    'joining',
+  ];
+  if (employmentKeywords.some((k) => lower.includes(k))) {
+    return 'employment';
+  }
+
+  const identityKeywords = [
+    'aadhaar',
+    'pan card',
+    'pan',
+    'passport',
+    'voter',
+    'license',
+    'driving',
+    'identity',
+    'id proof',
+    'photo',
+    'address proof',
+  ];
+  if (identityKeywords.some((k) => lower.includes(k))) {
+    return 'identity';
+  }
+
+  const statutoryKeywords = [
+    'pf',
+    'provident fund',
+    'uan',
+    'form 16',
+    'form-16',
+    'esic',
+    'tax',
+    'statutory',
+  ];
+  if (statutoryKeywords.some((k) => lower.includes(k))) {
+    return 'statutory';
+  }
+
+  const payslipKeywords = ['payslip', 'pay slip', 'salary slip', 'salary'];
+  if (payslipKeywords.some((k) => lower.includes(k))) {
+    return 'payslip';
+  }
+
+  return 'other';
+}
+
+function formatUploadedDate(dateString) {
+  if (!dateString) return 'N/A';
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return dateString;
+  }
+}
+
+function mapAdminDocument(doc) {
+  const isAvailable = doc.is_file_available !== false && doc.file_available !== false && doc.status !== 'Unavailable';
+  const fileName = doc.file_name || doc.fileName || 'document.pdf';
+  const extMatch = fileName.lastIndexOf('.');
+  const rawExt = extMatch > -1 ? fileName.slice(extMatch + 1).toUpperCase() : 'PDF';
+  const ext = rawExt.length <= 4 ? rawExt : 'DOC';
+
+  return {
+    id: doc.id,
+    employeeId: doc.employee_id,
+    category: determineCategory(doc.document_type),
+    name: doc.document_type || doc.name || 'Document',
+    fileName: fileName,
+    type: doc.document_type || doc.type || 'Document',
+    uploadedDate: formatUploadedDate(doc.created_at || doc.uploadedDate),
+    isFileAvailable: isAvailable,
+    status: isAvailable ? 'Available' : 'Unavailable',
+    ext: ext,
+  };
+}
+
+// ============================================================================
+// Document Card Item Component
+// ============================================================================
+function DocumentCardItem({ doc, onView, onDownload, onDelete }) {
+  const isImage = ['PNG', 'JPG', 'JPEG', 'WEBP', 'GIF', 'SVG'].includes(doc.ext);
+
+  return (
+    <article className="document-card admin-document-card" aria-labelledby={`doc-title-${doc.id}`}>
+      <div className="document-card-top">
+        <div className="document-icon-badge" aria-hidden="true">
+          <svg
+            className="document-svg-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+          <span className={`document-badge-ext ${isImage ? 'badge-ext-image' : ''}`}>
+            {doc.ext}
+          </span>
+        </div>
+
+        <div className="document-text-container">
+          <h3 id={`doc-title-${doc.id}`} className="document-title" title={doc.name}>
+            {doc.name}
+          </h3>
+          <p className="document-filename" title={doc.fileName}>{doc.fileName}</p>
+        </div>
+      </div>
+
+      <div className="document-meta-details">
+        <div className="document-meta-item">
+          <span className="document-meta-label">Type</span>
+          <span className="document-meta-value">{doc.type}</span>
+        </div>
+        <div className="document-meta-item">
+          <span className="document-meta-label">Uploaded</span>
+          <span className="document-meta-value">{doc.uploadedDate}</span>
+        </div>
+        <div className="document-meta-item">
+          <span className="document-meta-label">Status</span>
+          <span className="document-meta-value">
+            {doc.isFileAvailable ? (
+              <span className="admin-status-badge status-active" style={{ fontSize: '0.6875rem', padding: '0.15rem 0.5rem' }}>
+                <span className="status-dot" aria-hidden="true"></span>
+                Available
+              </span>
+            ) : (
+              <span
+                className="status-unavailable-badge"
+                title="Physical file is unavailable in private storage"
+              >
+                <span className="status-unavailable-dot" aria-hidden="true"></span>
+                File Unavailable
+              </span>
+            )}
+          </span>
+        </div>
+      </div>
+
+      <div className="document-card-actions">
+        <button
+          type="button"
+          className="document-btn document-btn-view"
+          disabled={!doc.isFileAvailable}
+          onClick={() => onView(doc)}
+          aria-label={`View ${doc.name}`}
+          title={!doc.isFileAvailable ? 'Physical file is unavailable in storage' : `View ${doc.name}`}
+        >
+          <svg
+            className="btn-action-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          View
+        </button>
+        <button
+          type="button"
+          className="document-btn document-btn-download"
+          disabled={!doc.isFileAvailable}
+          onClick={() => onDownload(doc)}
+          aria-label={`Download ${doc.name}`}
+          title={!doc.isFileAvailable ? 'Physical file is unavailable in storage' : `Download ${doc.name}`}
+        >
+          <svg
+            className="btn-action-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Download
+        </button>
+        <button
+          type="button"
+          className="document-btn document-btn-delete"
+          onClick={() => onDelete(doc)}
+          aria-label={`Delete ${doc.name}`}
+          title={`Delete ${doc.name}`}
+        >
+          <svg
+            className="btn-action-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            <line x1="10" y1="11" x2="10" y2="17" />
+            <line x1="14" y1="11" x2="14" y2="17" />
+          </svg>
+          Delete
+        </button>
+      </div>
+    </article>
+  );
+}
+
+// ============================================================================
+// Genuine Document Preview Modal Component
+// ============================================================================
+function DocumentPreviewModal({ doc, employeeId, onClose, onDownload }) {
+  const fileName = doc?.fileName || '';
+  const ext = fileName.slice(fileName.lastIndexOf('.')).toLowerCase();
+  const isPdf = ext === '.pdf';
+  const isImage = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg'].includes(ext);
+  const isUnsupported = !isPdf && !isImage;
+
+  const [loading, setLoading] = useState(!isUnsupported);
+  const [error, setError] = useState(null);
+  const [objectUrl, setObjectUrl] = useState(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+    let createdUrl = null;
+
+    if (!doc || !doc.id || isUnsupported) return;
+
+    async function loadDocument() {
+      try {
+        const blob = await api.admin.viewDocument(doc.id, employeeId);
+        if (isCancelled) return;
+
+        const url = window.URL.createObjectURL(blob);
+        createdUrl = url;
+        setObjectUrl(url);
+      } catch (err) {
+        if (!isCancelled) {
+          setError(err?.message || 'Unable to load this document from secure storage.');
+        }
+      } finally {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadDocument();
+
+    return () => {
+      isCancelled = true;
+      if (createdUrl) {
+        window.URL.revokeObjectURL(createdUrl);
+      }
+    };
+  }, [doc, employeeId, isUnsupported]);
+
+  if (!doc) return null;
+
+  return (
+    <div
+      className="doc-modal-backdrop"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="preview-modal-title"
+    >
+      <div
+        className="doc-modal-window"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: isPdf ? '900px' : isImage ? '650px' : '520px',
+          width: '95%',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div className="doc-modal-header">
+          <div className="doc-modal-headings">
+            <h3 id="preview-modal-title" className="doc-modal-title">
+              {doc.name}
+            </h3>
+            <span className="doc-modal-file">{doc.fileName}</span>
+          </div>
+          <button
+            type="button"
+            className="doc-modal-close"
+            onClick={onClose}
+            aria-label="Close document preview"
+          >
+            &times;
+          </button>
+        </div>
+
+        <div
+          className="doc-modal-content"
+          style={{
+            padding: isPdf && !loading && !error ? 0 : undefined,
+            flex: 1,
+            overflow: 'auto',
+          }}
+        >
+          {loading ? (
+            <div className="doc-preview-placeholder-box">
+              <div
+                className="doc-placeholder-icon"
+                aria-hidden="true"
+                style={{ animation: 'spin 1.2s linear infinite' }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="12" />
+                </svg>
+              </div>
+              <h4 className="doc-placeholder-title">Loading document...</h4>
+              <p className="doc-placeholder-desc">
+                Please wait while the document is securely retrieved.
+              </p>
+            </div>
+          ) : error ? (
+            <div className="doc-preview-placeholder-box">
+              <div
+                className="doc-placeholder-icon"
+                style={{ backgroundColor: '#fee2e2', color: '#dc2626' }}
+                aria-hidden="true"
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor">
+                  <path
+                    fillRule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </div>
+              <h4 className="doc-placeholder-title" style={{ color: '#dc2626' }}>
+                Unable to load this document.
+              </h4>
+              <p className="doc-placeholder-desc">{error}</p>
+            </div>
+          ) : isUnsupported ? (
+            <div className="doc-preview-placeholder-box">
+              <div className="doc-placeholder-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
+              </div>
+              <h4 className="doc-placeholder-title">
+                Preview is not available for this file type. Please download the document.
+              </h4>
+              <p className="doc-placeholder-desc">File: {doc.fileName}</p>
+            </div>
+          ) : isPdf && objectUrl ? (
+            <iframe
+              src={objectUrl}
+              title={doc.fileName || 'PDF Document Preview'}
+              style={{
+                width: '100%',
+                height: '65vh',
+                minHeight: '480px',
+                border: 'none',
+                display: 'block',
+              }}
+            />
+          ) : isImage && objectUrl ? (
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: '1.5rem',
+                maxHeight: '65vh',
+                overflow: 'auto',
+              }}
+            >
+              <img
+                src={objectUrl}
+                alt={doc.fileName || 'Document Preview'}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '60vh',
+                  objectFit: 'contain',
+                  borderRadius: '0.375rem',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          className="doc-modal-footer"
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          {onDownload && doc.isFileAvailable && (
+            <button
+              type="button"
+              className="doc-card-btn doc-card-btn-download"
+              onClick={() => onDownload(doc)}
+              style={{ minHeight: '38px', padding: '0.4rem 1rem' }}
+            >
+              <svg
+                className="btn-action-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Download
+            </button>
+          )}
+          <button
+            type="button"
+            className="admin-btn admin-btn-secondary"
+            onClick={onClose}
+            style={{ marginLeft: 'auto' }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const EMPTY_EDIT_FORM = {
   firstName: '',
@@ -37,11 +525,21 @@ function EmployeeDetails() {
   // Edit form state
   const [editForm, setEditForm] = useState(EMPTY_EDIT_FORM);
 
+  // Documents search & category filter state
+  const [docSearchQuery, setDocSearchQuery] = useState('');
+  const [activeDocCategory, setActiveDocCategory] = useState('all');
+
   // Upload document form state
-  const [uploadForm, setUploadForm] = useState({
-    docName: '',
-    docType: 'PDF',
-  });
+  const [uploadDocType, setUploadDocType] = useState('Offer Letter');
+  const [uploadCustomType, setUploadCustomType] = useState('');
+  const [uploadFile, setUploadFile] = useState(null);
+  const [submittingUpload, setSubmittingUpload] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
+  // Delete document modal state
+  const [docToDelete, setDocToDelete] = useState(null);
+  const [submittingDelete, setSubmittingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -115,9 +613,14 @@ function EmployeeDetails() {
       pf: {
         uan: raw.pf_details?.uan_number || '—',
         pfNumber: raw.pf_details?.pf_number || '—',
-        employerContribution: raw.pf_details?.employer_contribution ? `₹${raw.pf_details.employer_contribution}` : '—',
-        employeeContribution: raw.pf_details?.employee_contribution ? `₹${raw.pf_details.employee_contribution}` : (raw.payroll_profiles?.pf_employee ? `₹${raw.payroll_profiles.pf_employee}` : '—'),
-        pfStatus: raw.pf_details?.pf_status || (raw.pf_details?.uan_number ? 'Configured' : 'Not Configured'),
+        pensionNumber: raw.pf_details?.pension_number || '—',
+        employerContribution: (raw.pf_details?.employer_contribution !== null && raw.pf_details?.employer_contribution !== undefined && raw.pf_details?.employer_contribution !== '')
+          ? `₹${parseFloat(raw.pf_details.employer_contribution).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : 'Not configured',
+        employeeContribution: (raw.pf_details?.employee_contribution !== null && raw.pf_details?.employee_contribution !== undefined && raw.pf_details?.employee_contribution !== '')
+          ? `₹${parseFloat(raw.pf_details.employee_contribution).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : 'Not configured',
+        pfStatus: raw.pf_details?.pf_status || (raw.pf_details?.uan_number ? 'Active' : 'Not Configured'),
       },
       leaveSummary: {
         pl: {
@@ -134,7 +637,7 @@ function EmployeeDetails() {
           used: raw.leave_balances?.unpaid_leave_balance ?? 0,
         },
       },
-      documents: Array.isArray(raw.documents) ? raw.documents : [],
+      documents: Array.isArray(raw.documents) ? raw.documents.map(mapAdminDocument) : [],
       recentLeaves: Array.isArray(raw.recent_leaves) ? raw.recent_leaves : [],
       bankDetails: (raw.bank_details || bankRaw) ? {
         id: bankRaw?.id || raw.bank_details?.id,
@@ -301,17 +804,150 @@ function EmployeeDetails() {
     }
   };
 
-  // Upload document (Read-only notice)
-  const handleUploadSubmit = (e) => {
-    e.preventDefault();
-    setIsUploadModalOpen(false);
-    showToast('Document upload will be enabled in a future release (Read-Only phase).');
+  // View document handler
+  const handleViewDocument = (doc) => {
+    if (!doc.isFileAvailable) {
+      showToast(`Document "${doc.fileName}" is unavailable in physical storage.`);
+      return;
+    }
+    setPreviewDoc(doc);
   };
 
-  // Simulated download action
-  const handleSimulatedDownload = (docName) => {
-    showToast(`Download action for "${docName}". (Read-Only phase)`);
+  // Download document handler
+  const handleDownloadDocument = async (doc) => {
+    if (!doc.isFileAvailable) {
+      showToast(`Document "${doc.fileName}" is unavailable in physical storage.`);
+      return;
+    }
+    try {
+      const blob = await api.admin.downloadDocument(doc.id, employeeId);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', doc.fileName || `${doc.name}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      showToast(`Downloaded "${doc.fileName}" successfully.`);
+    } catch (err) {
+      showToast(err.message || 'Failed to download document.');
+    }
   };
+
+  // Delete document handlers
+  const handleOpenDeleteModal = (doc) => {
+    setDocToDelete(doc);
+    setDeleteError('');
+  };
+
+  const handleCloseDeleteModal = () => {
+    if (submittingDelete) return;
+    setDocToDelete(null);
+    setDeleteError('');
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!docToDelete || !docToDelete.id) return;
+    setSubmittingDelete(true);
+    setDeleteError('');
+    try {
+      const res = await api.admin.deleteDocument(docToDelete.id, employeeId);
+      if (res && res.success) {
+        showToast('Document deleted successfully.');
+        if (previewDoc?.id === docToDelete.id) {
+          setPreviewDoc(null);
+        }
+        setDocToDelete(null);
+        await fetchEmployeeDetails();
+      } else {
+        setDeleteError(res?.message || 'Failed to delete document.');
+      }
+    } catch (err) {
+      setDeleteError(err.message || 'An error occurred while deleting the document.');
+    } finally {
+      setSubmittingDelete(false);
+    }
+  };
+
+  // Upload document submit handler
+  const handleUploadSubmit = async (e) => {
+    e.preventDefault();
+    if (!uploadFile) {
+      setUploadError('Please select a file to upload.');
+      return;
+    }
+    setSubmittingUpload(true);
+    setUploadError('');
+    try {
+      const finalDocType = uploadDocType === 'Other'
+        ? (uploadCustomType.trim() || 'Other Document')
+        : uploadDocType;
+      const formData = new FormData();
+      formData.append('employee_id', employeeId);
+      formData.append('document_type', finalDocType);
+      formData.append('file', uploadFile);
+
+      const res = await api.admin.uploadDocument(formData);
+      if (res && res.success) {
+        showToast('Document uploaded successfully.');
+        setIsUploadModalOpen(false);
+        setUploadFile(null);
+        setUploadCustomType('');
+        setUploadDocType('Offer Letter');
+        fetchEmployeeDetails();
+      } else {
+        setUploadError(res?.message || 'Failed to upload document.');
+      }
+    } catch (err) {
+      setUploadError(err.message || 'An error occurred while uploading.');
+    } finally {
+      setSubmittingUpload(false);
+    }
+  };
+
+  // Mapped documents and filters
+  const mappedDocs = useMemo(() => {
+    return employee?.documents || [];
+  }, [employee?.documents]);
+
+  const filteredDocs = useMemo(() => {
+    return mappedDocs.filter((doc) => {
+      if (activeDocCategory !== 'all' && doc.category !== activeDocCategory) {
+        return false;
+      }
+      if (docSearchQuery.trim()) {
+        const q = docSearchQuery.trim().toLowerCase();
+        const matchName = (doc.name || '').toLowerCase().includes(q);
+        const matchFile = (doc.fileName || '').toLowerCase().includes(q);
+        const matchType = (doc.type || '').toLowerCase().includes(q);
+        if (!matchName && !matchFile && !matchType) return false;
+      }
+      return true;
+    });
+  }, [mappedDocs, activeDocCategory, docSearchQuery]);
+
+  const availableCategoryIds = useMemo(() => {
+    const set = new Set();
+    mappedDocs.forEach((d) => set.add(d.category));
+    return set;
+  }, [mappedDocs]);
+
+  const groupedSections = useMemo(() => {
+    const order = ['employment', 'identity', 'statutory', 'payslip', 'other'];
+    const sections = [];
+    order.forEach((catId) => {
+      const docsInCat = filteredDocs.filter((d) => d.category === catId);
+      if (docsInCat.length > 0) {
+        sections.push({
+          id: catId,
+          title: SECTION_CONFIG[catId]?.title || 'Documents',
+          docs: docsInCat,
+        });
+      }
+    });
+    return sections;
+  }, [filteredDocs]);
 
   // Avatar initials
   const initials = employee && employee.firstName && employee.lastName
@@ -603,7 +1239,11 @@ function EmployeeDetails() {
           <button
             type="button"
             className="admin-btn-secondary admin-btn-sm"
-            onClick={() => setIsUploadModalOpen(true)}
+            onClick={() => {
+              setUploadError('');
+              setUploadFile(null);
+              setIsUploadModalOpen(true);
+            }}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16" aria-hidden="true">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -614,69 +1254,154 @@ function EmployeeDetails() {
           </button>
         </div>
 
-        <div className="admin-docs-list">
-          {employee.documents && employee.documents.length > 0 ? (
-            employee.documents.map((doc) => {
-              const isAvailable = doc.status === 'Available';
-              return (
-                <div key={doc.id} className="admin-doc-item">
-                  <div className="admin-doc-left">
-                    <div className="admin-doc-icon-wrapper" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                        <polyline points="14 2 14 8 20 8" />
-                        <line x1="16" y1="13" x2="8" y2="13" />
-                        <line x1="16" y1="17" x2="8" y2="17" />
-                      </svg>
-                    </div>
-                    <div className="admin-doc-meta">
-                      <span className="admin-doc-name">{doc.name}</span>
-                      <span className="admin-doc-subtext">
-                        {doc.type} &bull; {isAvailable ? `Uploaded: ${doc.uploadedDate}` : 'File pending upload'}
+        {employee.documents && employee.documents.length > 0 ? (
+          <>
+            {/* Toolbar: Search & Category Filter Pills */}
+            <div className="admin-docs-toolbar">
+              <div className="admin-docs-search-wrapper">
+                <svg
+                  className="admin-docs-search-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input
+                  type="text"
+                  className="admin-docs-search-input"
+                  placeholder="Search by title, filename, or type..."
+                  value={docSearchQuery}
+                  onChange={(e) => setDocSearchQuery(e.target.value)}
+                  aria-label="Search employee documents"
+                />
+                {docSearchQuery && (
+                  <button
+                    type="button"
+                    className="admin-docs-search-clear"
+                    onClick={() => setDocSearchQuery('')}
+                    aria-label="Clear document search"
+                  >
+                    &times;
+                  </button>
+                )}
+              </div>
+
+              <div className="admin-docs-category-filters" role="tablist" aria-label="Filter documents by category">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeDocCategory === 'all'}
+                  className={`admin-docs-filter-btn ${activeDocCategory === 'all' ? 'active' : ''}`}
+                  onClick={() => setActiveDocCategory('all')}
+                >
+                  All
+                  <span className="admin-docs-pill-count">{employee.documents.length}</span>
+                </button>
+                {CATEGORY_TABS.filter((cat) => cat.id !== 'all' && availableCategoryIds.has(cat.id)).map((cat) => {
+                  const count = employee.documents.filter((d) => d.category === cat.id).length;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={activeDocCategory === cat.id}
+                      className={`admin-docs-filter-btn ${activeDocCategory === cat.id ? 'active' : ''}`}
+                      onClick={() => setActiveDocCategory(cat.id)}
+                    >
+                      {cat.label}
+                      <span className="admin-docs-pill-count">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Grouped Sections */}
+            {groupedSections.length > 0 ? (
+              <div className="documents-sections-wrapper" style={{ marginTop: '0.25rem' }}>
+                {groupedSections.map((section) => (
+                  <section key={section.id} className="admin-doc-category-group" aria-labelledby={`sec-title-${section.id}`}>
+                    <div className="admin-category-header">
+                      <h3 id={`sec-title-${section.id}`} className="admin-category-title">
+                        {section.title}
+                      </h3>
+                      <span className="admin-category-count">
+                        {section.docs.length} {section.docs.length === 1 ? 'Document' : 'Documents'}
                       </span>
                     </div>
-                  </div>
 
-                  <div className="admin-doc-right">
-                    <span
-                      className={`admin-status-badge ${
-                        isAvailable ? 'status-active' : 'status-inactive'
-                      }`}
-                    >
-                      <span className="status-dot" aria-hidden="true"></span>
-                      {doc.status}
-                    </span>
-
-                    <div className="admin-doc-actions">
-                      <button
-                        type="button"
-                        className="admin-doc-btn"
-                        disabled={!isAvailable}
-                        onClick={() => setPreviewDoc(doc)}
-                        aria-label={`View ${doc.name}`}
-                      >
-                        View
-                      </button>
-                      <button
-                        type="button"
-                        className="admin-doc-btn"
-                        disabled={!isAvailable}
-                        onClick={() => handleSimulatedDownload(doc.name)}
-                        aria-label={`Download ${doc.name}`}
-                      >
-                        Download
-                      </button>
+                    <div className="admin-docs-grid">
+                      {section.docs.map((doc) => (
+                        <DocumentCardItem
+                          key={doc.id}
+                          doc={doc}
+                          onView={handleViewDocument}
+                          onDownload={handleDownloadDocument}
+                          onDelete={handleOpenDeleteModal}
+                        />
+                      ))}
                     </div>
-                  </div>
-                </div>
-              );
-            })
-          ) : (
-            <div className="text-muted" style={{ padding: '2rem 1rem', textAlign: 'center' }}>
-              No official documents on record for this employee.
+                  </section>
+                ))}
+              </div>
+            ) : (
+              <div className="text-muted" style={{ padding: '2.5rem 1rem', textAlign: 'center' }}>
+                <p style={{ margin: 0, fontWeight: 500, color: '#475569' }}>
+                  No documents match "{docSearchQuery}"{activeDocCategory !== 'all' ? ` in ${activeDocCategory}` : ''}.
+                </p>
+                <button
+                  type="button"
+                  className="admin-btn-secondary admin-btn-sm"
+                  style={{ marginTop: '0.75rem' }}
+                  onClick={() => {
+                    setDocSearchQuery('');
+                    setActiveDocCategory('all');
+                  }}
+                >
+                  Clear Search & Filters
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="admin-docs-empty-state">
+            <div className="admin-docs-empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
             </div>
-          )}
-        </div>
+            <h3 className="admin-docs-empty-title">No documents uploaded</h3>
+            <p className="admin-docs-empty-desc">
+              There are currently no official documents uploaded for this employee.
+            </p>
+            <button
+              type="button"
+              className="admin-btn-primary admin-btn-sm"
+              onClick={() => {
+                setUploadError('');
+                setUploadFile(null);
+                setIsUploadModalOpen(true);
+              }}
+              style={{ marginTop: '0.75rem' }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              <span>Upload First Document</span>
+            </button>
+          </div>
+        )}
       </section>
 
       {/* ====================================================================
@@ -720,10 +1445,15 @@ function EmployeeDetails() {
               <span className="admin-pf-stat-val text-primary">{employee.pf.employeeContribution}</span>
             </div>
 
-            <div className="admin-pf-stat-box admin-field-full">
+            <div className="admin-pf-stat-box">
+              <span className="admin-pf-stat-label">Pension Number (EPS)</span>
+              <span className="admin-pf-stat-val font-mono">{employee.pf.pensionNumber}</span>
+            </div>
+
+            <div className="admin-pf-stat-box">
               <span className="admin-pf-stat-label">PF Status</span>
               <span className="admin-pf-stat-val">
-                <span className="admin-status-badge status-active">
+                <span className={`admin-status-badge ${employee.pf.pfStatus === 'Active' || employee.pf.pfStatus === 'Configured' ? 'status-active' : 'status-neutral'}`}>
                   <span className="status-dot" aria-hidden="true"></span>
                   {employee.pf.pfStatus}
                 </span>
@@ -1166,15 +1896,19 @@ function EmployeeDetails() {
 
                 {/* Designation */}
                 <div className="admin-form-field">
-                  <label htmlFor="editDesignation" className="admin-field-label">Designation</label>
-                  <input
+                  <label htmlFor="editDesignation" className="admin-field-label">Designation <span className="required" style={{ color: '#dc2626', marginLeft: '2px' }}>*</span></label>
+                  <select
                     id="editDesignation"
                     name="designation"
-                    type="text"
-                    className="admin-field-input"
+                    required
+                    className="admin-field-select"
                     value={editForm.designation}
                     onChange={handleEditChange}
-                  />
+                  >
+                    <option value="">Select Designation</option>
+                    <option value="Associate Software Engineer">Associate Software Engineer</option>
+                    <option value="Associate">Associate</option>
+                  </select>
                 </div>
 
                 {/* Joining Date */}
@@ -1338,60 +2072,102 @@ function EmployeeDetails() {
       )}
 
       {/* ====================================================================
-          UPLOAD DOCUMENT MODAL (UI-only)
+          UPLOAD DOCUMENT MODAL
           ==================================================================== */}
       {isUploadModalOpen && (
-        <div className="admin-modal-overlay" role="dialog" aria-modal="true">
-          <div className="admin-modal-container">
+        <div className="admin-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="upload-modal-title">
+          <div className="admin-modal-container" style={{ maxWidth: '520px' }}>
             <div className="admin-modal-header">
-              <h2 className="admin-modal-title">Upload Employee Document</h2>
+              <h2 id="upload-modal-title" className="admin-modal-title">Upload Employee Document</h2>
               <button
                 type="button"
                 className="admin-modal-close-btn"
                 onClick={() => setIsUploadModalOpen(false)}
                 aria-label="Close dialog"
+                disabled={submittingUpload}
               >
                 &times;
               </button>
             </div>
 
             <form onSubmit={handleUploadSubmit} className="admin-modal-form">
-              <div className="admin-form-field">
-                <label htmlFor="docName" className="admin-field-label">
-                  Document Title <span className="text-required">*</span>
-                </label>
-                <input
-                  id="docName"
-                  type="text"
-                  required
-                  placeholder="e.g. Appointment Letter"
-                  className="admin-field-input"
-                  value={uploadForm.docName}
-                  onChange={(e) => setUploadForm((p) => ({ ...p, docName: e.target.value }))}
-                />
-              </div>
+              {uploadError && (
+                <div style={{ padding: '0.625rem 0.875rem', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '0.375rem', color: '#b91c1c', fontSize: '0.8125rem', marginBottom: '1rem' }}>
+                  {uploadError}
+                </div>
+              )}
 
-              <div className="admin-form-field" style={{ marginTop: '1rem' }}>
-                <label htmlFor="docType" className="admin-field-label">Document Type</label>
+              <div className="admin-form-field">
+                <label htmlFor="uploadDocTypeSelect" className="admin-field-label">
+                  Document Type <span className="text-required">*</span>
+                </label>
                 <select
-                  id="docType"
+                  id="uploadDocTypeSelect"
                   className="admin-field-select"
-                  value={uploadForm.docType}
-                  onChange={(e) => setUploadForm((p) => ({ ...p, docType: e.target.value }))}
+                  value={uploadDocType}
+                  onChange={(e) => setUploadDocType(e.target.value)}
+                  disabled={submittingUpload}
                 >
-                  <option value="PDF">PDF Document</option>
-                  <option value="DOCX">Word Document (.docx)</option>
-                  <option value="SCAN">Scanned Image</option>
+                  <optgroup label="Employment Documents">
+                    <option value="Offer Letter">Offer Letter</option>
+                    <option value="Appointment Letter">Appointment Letter</option>
+                    <option value="Relieving Letter">Relieving Letter</option>
+                    <option value="Experience Certificate">Experience Certificate</option>
+                    <option value="FnF Statement">FnF Statement</option>
+                  </optgroup>
+                  <optgroup label="Identity & Personal">
+                    <option value="Aadhaar Card">Aadhaar Card</option>
+                    <option value="PAN Card">PAN Card</option>
+                    <option value="Passport">Passport</option>
+                    <option value="Profile Photo">Profile Photo</option>
+                  </optgroup>
+                  <optgroup label="PF & Statutory">
+                    <option value="PF Document">PF Document</option>
+                    <option value="Form 16">Form 16</option>
+                  </optgroup>
+                  <optgroup label="Other">
+                    <option value="Educational Certificate">Educational Certificate</option>
+                    <option value="Payslip">Payslip</option>
+                    <option value="Other">Other Document...</option>
+                  </optgroup>
                 </select>
               </div>
 
+              {uploadDocType === 'Other' && (
+                <div className="admin-form-field" style={{ marginTop: '1rem' }}>
+                  <label htmlFor="customDocTitle" className="admin-field-label">
+                    Custom Document Title <span className="text-required">*</span>
+                  </label>
+                  <input
+                    id="customDocTitle"
+                    type="text"
+                    required
+                    placeholder="e.g. Training Completion Certificate"
+                    className="admin-field-input"
+                    value={uploadCustomType}
+                    onChange={(e) => setUploadCustomType(e.target.value)}
+                    disabled={submittingUpload}
+                  />
+                </div>
+              )}
+
               <div className="admin-form-field" style={{ marginTop: '1rem' }}>
-                <label className="admin-field-label">Choose File (Simulated)</label>
+                <label htmlFor="docFileInput" className="admin-field-label">
+                  Select File (PDF, PNG, JPG) <span className="text-required">*</span>
+                </label>
                 <input
+                  id="docFileInput"
                   type="file"
+                  required
+                  accept=".pdf,.png,.jpg,.jpeg,.webp"
                   className="admin-field-input"
-                  style={{ paddingTop: '0.4rem' }}
+                  style={{ paddingTop: '0.45rem' }}
+                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                  disabled={submittingUpload}
                 />
+                <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem', display: 'block' }}>
+                  Supported formats: PDF, PNG, JPG, JPEG (Max: 10MB)
+                </span>
               </div>
 
               <div className="admin-modal-footer">
@@ -1399,11 +2175,16 @@ function EmployeeDetails() {
                   type="button"
                   className="admin-btn admin-btn-secondary"
                   onClick={() => setIsUploadModalOpen(false)}
+                  disabled={submittingUpload}
                 >
                   Cancel
                 </button>
-                <button type="submit" className="admin-btn-primary">
-                  Upload Document
+                <button
+                  type="submit"
+                  className="admin-btn-primary"
+                  disabled={submittingUpload}
+                >
+                  {submittingUpload ? 'Uploading...' : 'Upload Document'}
                 </button>
               </div>
             </form>
@@ -1412,68 +2193,96 @@ function EmployeeDetails() {
       )}
 
       {/* ====================================================================
-          DOCUMENT PREVIEW MODAL (UI-only)
+          GENUINE DOCUMENT PREVIEW MODAL
           ==================================================================== */}
       {previewDoc && (
-        <div className="admin-modal-overlay" role="dialog" aria-modal="true">
-          <div className="admin-modal-container admin-doc-preview-modal">
+        <DocumentPreviewModal
+          doc={previewDoc}
+          employeeId={employeeId}
+          onClose={() => setPreviewDoc(null)}
+          onDownload={handleDownloadDocument}
+        />
+      )}
+
+      {/* ====================================================================
+          DELETE DOCUMENT CONFIRMATION MODAL
+          ==================================================================== */}
+      {docToDelete && (
+        <div
+          className="admin-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-doc-modal-title"
+        >
+          <div className="admin-modal-container admin-confirm-modal" style={{ maxWidth: '460px' }}>
             <div className="admin-modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div className="admin-doc-icon-wrapper" style={{ width: '28px', height: '28px' }}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                  </svg>
-                </div>
-                <h2 className="admin-modal-title">{previewDoc.name}</h2>
-              </div>
+              <h2 id="delete-doc-modal-title" className="admin-modal-title">
+                Delete Document?
+              </h2>
               <button
                 type="button"
                 className="admin-modal-close-btn"
-                onClick={() => setPreviewDoc(null)}
-                aria-label="Close preview"
+                onClick={handleCloseDeleteModal}
+                disabled={submittingDelete}
+                aria-label="Close dialog"
               >
                 &times;
               </button>
             </div>
 
-            <div className="admin-preview-content">
-              <div className="admin-preview-simulated-sheet">
-                <div className="admin-preview-sheet-header">
-                  <span className="sheet-org">GaintPro Software Technologies</span>
-                  <span className="sheet-doc-type">{previewDoc.type} DOCUMENT PREVIEW</span>
-                </div>
-                <h3 className="sheet-title">{previewDoc.name}</h3>
-                <p className="sheet-text">
-                  Issued to: <strong>{employee.name}</strong> ({employee.employeeId})
-                </p>
-                <p className="sheet-text">
-                  Department: <strong>{employee.department}</strong> &bull; Designation: <strong>{employee.designation}</strong>
-                </p>
-                <p className="sheet-text">
-                  Uploaded on: <strong>{previewDoc.uploadedDate || '15 May 2025'}</strong>
-                </p>
-                <div className="sheet-watermark">PREVIEW ONLY</div>
+            <div className="admin-confirm-body">
+              <div
+                className="admin-confirm-icon-wrap"
+                style={{ backgroundColor: '#fee2e2', color: '#dc2626' }}
+                aria-hidden="true"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <line x1="10" y1="11" x2="10" y2="17" />
+                  <line x1="14" y1="11" x2="14" y2="17" />
+                </svg>
               </div>
+              <p className="admin-confirm-message">
+                Are you sure you want to permanently delete this document? This action cannot be undone.
+              </p>
+              <p className="admin-confirm-subtext">
+                Document: <strong>{docToDelete.name}</strong> ({docToDelete.fileName})
+              </p>
+              {deleteError && (
+                <div
+                  style={{
+                    marginTop: '0.875rem',
+                    padding: '0.625rem 0.875rem',
+                    backgroundColor: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    borderRadius: '0.375rem',
+                    color: '#b91c1c',
+                    fontSize: '0.8125rem',
+                    textAlign: 'left',
+                  }}
+                >
+                  {deleteError}
+                </div>
+              )}
             </div>
 
             <div className="admin-modal-footer">
               <button
                 type="button"
                 className="admin-btn admin-btn-secondary"
-                onClick={() => setPreviewDoc(null)}
+                onClick={handleCloseDeleteModal}
+                disabled={submittingDelete}
               >
-                Close Preview
+                Cancel
               </button>
               <button
                 type="button"
-                className="admin-btn-primary"
-                onClick={() => {
-                  handleSimulatedDownload(previewDoc.name);
-                  setPreviewDoc(null);
-                }}
+                className="admin-btn admin-btn-danger"
+                onClick={handleConfirmDelete}
+                disabled={submittingDelete}
               >
-                Download PDF
+                {submittingDelete ? 'Deleting...' : 'Yes, Delete'}
               </button>
             </div>
           </div>
